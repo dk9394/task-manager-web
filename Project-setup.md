@@ -51,7 +51,76 @@ npm install @ngrx/store@19 @ngrx/effects@19 @ngrx/store-devtools@19 @ngrx/entity
 
 ## Step 2: Environment Configuration
 
-*(To be documented after completion)*
+Manage different configurations for development and production environments.
+
+### Files Created
+
+```
+src/
+├── app/
+│   └── models/
+│       └── environment.models.ts    # Type interface
+└── environments/
+    ├── environment.ts               # Development config
+    └── environment.prod.ts          # Production config
+```
+
+### Environment Interface
+
+**File:** `src/app/models/environment.models.ts`
+
+```typescript
+export interface Environment {
+  production: boolean;
+  apiUrl: string;
+}
+```
+
+### Development Environment
+
+**File:** `src/environments/environment.ts`
+
+```typescript
+import { Environment } from '../app/models/environment.models';
+
+export const environment: Environment = {
+  production: false,
+  apiUrl: 'http://localhost:3000/api',
+};
+```
+
+### Production Environment
+
+**File:** `src/environments/environment.prod.ts`
+
+```typescript
+import { Environment } from '../app/models/environment.models';
+
+export const environment: Environment = {
+  production: true,
+  apiUrl: 'https://your-production-api.com/api',
+};
+```
+
+### Angular.json Configuration
+
+Added file replacement in `angular.json` under `projects > task-manager-web > architect > build > configurations > production`:
+
+```json
+"fileReplacements": [
+  {
+    "replace": "src/environments/environment.ts",
+    "with": "src/environments/environment.prod.ts"
+  }
+]
+```
+
+### Key Points
+
+- **Auto-replacement**: Angular CLI swaps environment files during production builds
+- **Type Safety**: Both files implement the same `Environment` interface
+- **Never hardcode**: Always import API URL from environment, not hardcoded strings
+- **No secrets**: Environment files are bundled in browser code - never store secrets here
 
 ---
 
