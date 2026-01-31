@@ -205,7 +205,105 @@ src/app/
 
 ## Step 4: Auth State Management (NgRx)
 
-*(To be documented after completion)*
+Complete NgRx setup for authentication state management.
+
+### Files Created
+
+```
+src/app/
+├── models/                              # Centralized models
+│   ├── environment.model.ts
+│   ├── user/
+│   │   └── user.model.ts                # User interface
+│   └── auth/
+│       ├── auth.model.ts                # Auth request/response interfaces
+│       └── auth-state.model.ts          # Auth state interface
+└── features/auth/
+    └── store/
+        ├── auth.actions.ts              # NgRx actions
+        ├── auth.reducers.ts             # State reducer
+        ├── auth.selectors.ts            # State selectors
+        └── auth.effects.ts              # Side effects (placeholder)
+```
+
+### Models
+
+**User Model** (`models/user/user.model.ts`):
+```typescript
+export type UserTheme = 'light' | 'dark' | 'system';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string | null;
+  theme?: UserTheme;
+}
+```
+
+**Auth Models** (`models/auth/auth.model.ts`):
+```typescript
+export interface AuthTokens { accessToken: string; refreshToken: string; }
+export interface LoginRequest { email: string; password: string; }
+export interface RegisterRequest { name: string; email: string; password: string; }
+export interface AuthResponse { user: User; tokens: AuthTokens; }
+export interface RefreshTokenResponse extends AuthTokens {}
+```
+
+**Auth State** (`models/auth/auth-state.model.ts`):
+```typescript
+export interface AuthState {
+  user: User | null;
+  accessToken: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
+}
+```
+
+### NgRx Actions (createActionGroup)
+
+| Action | Payload | Purpose |
+|--------|---------|---------|
+| `Login` | `LoginRequest` | Trigger login |
+| `Login Success` | `AuthResponse` | Login succeeded |
+| `Login Failure` | `error` | Login failed |
+| `Register` | `RegisterRequest` | Trigger registration |
+| `Logout` | none | Trigger logout |
+| `Refresh Token` | none | Refresh access token |
+| `Clear Error` | none | Clear error state |
+
+### NgRx Selectors
+
+| Selector | Returns |
+|----------|---------|
+| `selectUser` | `User \| null` |
+| `selectAccessToken` | `string \| null` |
+| `selectIsAuthenticated` | `boolean` |
+| `selectIsLoading` | `boolean` |
+| `selectError` | `string \| null` |
+| `selectAuthStatus` | Combined status object |
+
+### App Config Registration
+
+```typescript
+provideStore({ auth: authReducer }),
+provideEffects([AuthEffects]),
+provideStoreDevtools({
+  maxAge: 25,
+  logOnly: !isDevMode(),
+  connectInZone: true,
+}),
+```
+
+### Key Concepts
+
+- **createActionGroup**: Modern NgRx pattern for related actions
+- **exhaustMap**: Prevents duplicate API calls (used in effects)
+- **Feature Selector**: `createFeatureSelector('auth')` for state access
+- **isDevMode()**: Restricts DevTools in production
+- **connectInZone**: Ensures Angular change detection works with DevTools
 
 ---
 
