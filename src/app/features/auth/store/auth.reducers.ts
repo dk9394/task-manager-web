@@ -1,4 +1,5 @@
 import { createReducer, on } from '@ngrx/store';
+
 import { initialAuthState } from '../../../models/auth/auth-state.model';
 import { AuthActions } from './auth.actions';
 
@@ -67,8 +68,8 @@ export const authReducer = createReducer(
   })),
   on(AuthActions.refreshTokenSuccess, (state, { response }) => ({
     ...state,
-    accessToken: response.accessToken,
-    refreshToken: response.refreshToken,
+    accessToken: response.tokens.accessToken,
+    refreshToken: response.tokens.refreshToken,
   })),
   on(AuthActions.refreshTokenFailure, () => ({
     ...initialAuthState,

@@ -1,4 +1,5 @@
 import { createFeatureSelector, createSelector } from '@ngrx/store';
+
 import { AuthState } from '../../../models/auth/auth-state.model';
 
 export const selectAuthState = createFeatureSelector<AuthState>('auth');

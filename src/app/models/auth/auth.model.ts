@@ -1,4 +1,4 @@
-import { User } from '../user/user.model';
+import { User } from './user.model';
 
 export interface AuthTokens {
   accessToken: string;
@@ -16,13 +16,11 @@ export interface RegisterRequest {
   password: string;
 }
 
-export interface AuthResponse {
-  user: User;
-  tokens: AuthTokens;
-}
-
 export interface RefreshTokenRequest {
   refreshToken: string;
 }
 
-export interface RefreshTokenResponse extends AuthTokens {}
+export interface AuthResponse {
+  user: User;
+  tokens: AuthTokens;
+}

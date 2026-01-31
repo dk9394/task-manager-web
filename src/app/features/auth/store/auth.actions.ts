@@ -3,10 +3,9 @@ import { createActionGroup, emptyProps, props } from '@ngrx/store';
 import {
   AuthResponse,
   LoginRequest,
-  RefreshTokenResponse,
   RegisterRequest,
 } from '../../../models/auth/auth.model';
-import { User } from '../../../models/user/user.model';
+import { User } from '../../../models/auth/user.model';
 
 export const AuthActions = createActionGroup({
   source: 'Auth',
@@ -24,7 +23,7 @@ export const AuthActions = createActionGroup({
     'Logout Failure': props<{ error: string }>(),
 
     'Refresh Token': emptyProps(),
-    'Refresh Token Success': props<{ response: RefreshTokenResponse }>(),
+    'Refresh Token Success': props<{ response: AuthResponse }>(),
     'Refresh Token Failure': props<{ error: string }>(),
 
     'Load User From Storage': emptyProps(),
