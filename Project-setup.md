@@ -126,7 +126,80 @@ Added file replacement in `angular.json` under `projects > task-manager-web > ar
 
 ## Step 3: Core Module Setup
 
-*(To be documented after completion)*
+Configure app providers and global styles for NgRx, HTTP Client, and PrimeNG.
+
+### App Configuration
+
+**File:** `src/app/app.config.ts`
+
+```typescript
+import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+
+import { provideStore } from '@ngrx/store';
+import { provideEffects } from '@ngrx/effects';
+import { provideStoreDevtools } from '@ngrx/store-devtools';
+
+import { providePrimeNG } from 'primeng/config';
+import Aura from '@primeng/themes/aura';
+
+import { routes } from './app.routes';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideZoneChangeDetection({ eventCoalescing: true }),
+    provideRouter(routes),
+    provideHttpClient(withInterceptors([])),
+    provideStore(),
+    provideEffects(),
+    provideStoreDevtools(),
+    providePrimeNG({
+      theme: {
+        preset: Aura,
+      },
+      ripple: true,
+    }),
+  ],
+};
+```
+
+### Global Styles
+
+**File:** `src/styles.scss`
+
+```scss
+/* PrimeNG Styles */
+@import "primeicons/primeicons.css";
+
+/* Your custom styles below */
+```
+
+### Providers Summary
+
+| Provider | Purpose |
+|----------|---------|
+| `provideHttpClient(withInterceptors([]))` | HTTP client with interceptor support |
+| `provideStore()` | NgRx root store |
+| `provideEffects()` | NgRx effects for side effects |
+| `provideStoreDevtools()` | Redux DevTools integration |
+| `providePrimeNG()` | PrimeNG theming (Aura preset) |
+
+### PrimeNG v19 Theming
+
+- No CSS imports needed (except primeicons)
+- Theme applied via `providePrimeNG()` with preset
+- Available presets: `Aura`, `Lara`, `Nora`
+
+### Folder Structure (Created as needed)
+
+```
+src/app/
+├── core/           # Singleton services, guards, interceptors
+├── shared/         # Reusable components, pipes, directives
+├── features/       # Feature modules (lazy-loaded)
+└── models/         # Shared interfaces/types
+```
 
 ---
 
