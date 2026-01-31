@@ -378,7 +378,64 @@ Auth effects now use AuthService for API calls with `exhaustMap` pattern.
 
 ## Step 6: HTTP Interceptor
 
-*(To be documented after completion)*
+Functional interceptor for token attachment and automatic refresh.
+
+### File Created
+
+```
+src/app/core/interceptors/auth.interceptor.ts
+```
+
+### Interceptor Flow
+
+```
+Request → Check if public URL → Skip if public
+                ↓
+        Attach access token
+                ↓
+        Send request
+                ↓
+        401 Error? → Refresh token → Retry with new token
+                ↓
+        Other error? → Pass through
+```
+
+### Key Features
+
+| Feature | Implementation |
+|---------|----------------|
+| Skip public URLs | `AppConstants.PUBLIC_URLS.some()` |
+| Attach token | `Authorization: Bearer ${token}` |
+| Handle 401 | Call `refreshToken()`, retry request |
+| Logout on failure | Clear tokens, redirect to login |
+
+### Public URLs (in AppConstants)
+
+```typescript
+static PUBLIC_URLS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh-token',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+];
+```
+
+### Registration in app.config.ts
+
+```typescript
+provideHttpClient(withInterceptors([authInterceptor]))
+```
+
+### Angular 17+ Functional Interceptor Pattern
+
+```typescript
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const authService = inject(AuthService);
+  // ... interceptor logic
+  return next(authReq).pipe(catchError(...));
+};
+```
 
 ---
 
