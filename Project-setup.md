@@ -441,13 +441,161 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
 ## Step 7: Auth Guard
 
-*(To be documented after completion)*
+Functional route guards for authentication protection.
+
+### File Created
+
+```
+src/app/core/guards/auth.guard.ts
+```
+
+### Guards Implemented
+
+| Guard | Purpose |
+|-------|---------|
+| `authGuard` | Protects routes requiring authentication |
+| `guestGuard` | Redirects authenticated users away from login/register |
+
+### Implementation
+
+```typescript
+import { inject } from '@angular/core';
+import { CanActivateFn, Router } from '@angular/router';
+import { AuthService } from '../services/auth.service';
+
+export const authGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  const token = authService.getAccessToken();
+
+  if (token) {
+    return true;
+  }
+
+  router.navigate(['/auth/login'], { queryParams: { returnUrl: state.url } });
+  return false;
+};
+
+export const guestGuard: CanActivateFn = (route, state) => {
+  const authService = inject(AuthService);
+  const router = inject(Router);
+
+  const token = authService.getAccessToken();
+
+  if (!token) {
+    return true;
+  }
+
+  router.navigate(['/dashboard']);
+  return false;
+};
+```
+
+### Key Concepts
+
+- **CanActivateFn**: Angular 17+ functional guard type
+- **inject()**: Dependency injection in functional context
+- **returnUrl**: Query param for post-login redirect
 
 ---
 
 ## Step 8: Login Component
 
-*(To be documented after completion)*
+Login form with reactive forms, PrimeNG UI wrappers, and NgRx integration.
+
+### Files Created
+
+```
+src/app/
+├── features/auth/components/login/
+│   ├── login.component.ts
+│   ├── login.component.html
+│   └── login.component.scss
+├── shared/ui/
+│   ├── ui-input/
+│   ├── ui-input-password/
+│   ├── ui-button/
+│   ├── ui-card/
+│   └── ui-message/
+└── models/auth/
+    └── login-form.model.ts
+```
+
+### Login Component
+
+```typescript
+@Component({
+  selector: 'app-login',
+  imports: [
+    ReactiveFormsModule,
+    RouterModule,
+    AsyncPipe,
+    UiCardComponent,
+    UiMessageComponent,
+    UiInputComponent,
+    UiInputPasswordComponent,
+    UiButtonComponent,
+  ],
+  templateUrl: './login.component.html',
+})
+export class LoginComponent implements OnInit {
+  private fb = inject(NonNullableFormBuilder);
+  private store = inject(Store);
+
+  form!: FormGroup<LoginForm>;
+  authStatus$ = this.store.select(selectAuthStatus);
+
+  get emailControl(): FormControl<string> {
+    return this.form.controls.email;
+  }
+
+  get passwordControl(): FormControl<string> {
+    return this.form.controls.password;
+  }
+
+  ngOnInit(): void {
+    this.form = this.fb.group({
+      email: ['', [Validators.required, Validators.email]],
+      password: ['', [Validators.required, Validators.minLength(6)]],
+    });
+  }
+
+  onSubmit(): void {
+    if (this.form.valid) {
+      this.store.dispatch(AuthActions.login({ request: this.form.getRawValue() }));
+    } else {
+      this.form.markAllAsTouched();
+    }
+  }
+}
+```
+
+### UI Wrapper Pattern (Simple Pass-Through)
+
+```typescript
+// ui-input.component.ts
+@Component({
+  selector: 'ui-input',
+  imports: [InputTextModule, ReactiveFormsModule],
+  template: `...`,
+})
+export class UiInputComponent {
+  @Input({ required: true }) control!: FormControl;
+  @Input() label = '';
+  @Input() placeholder = '';
+  @Input() type: 'text' | 'email' | 'number' = 'text';
+  @Input() errorMessage = '';
+}
+```
+
+### Key Concepts
+
+- **NonNullableFormBuilder**: Ensures form values are never null
+- **Typed FormGroup**: `FormGroup<LoginForm>` for type safety
+- **Getter methods**: Clean access to form controls in template
+- **UI Wrappers**: Simple pass-through pattern (no ControlValueAccessor)
+- **selectAuthStatus**: Combined selector for loading/error state
 
 ---
 
