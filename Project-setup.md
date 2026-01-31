@@ -309,7 +309,70 @@ provideStoreDevtools({
 
 ## Step 5: Auth Service
 
-*(To be documented after completion)*
+HTTP service for authentication API calls and token management.
+
+### Files Created
+
+```
+src/app/
+├── core/services/
+│   └── auth.service.ts          # Auth API service
+└── models/
+    ├── api/
+    │   └── api-response.model.ts # API response wrapper
+    └── app-constants.ts          # Storage key constants
+```
+
+### Auth Service Methods
+
+| Method | API Endpoint | Purpose |
+|--------|--------------|---------|
+| `login()` | POST `/auth/login` | Authenticate user |
+| `register()` | POST `/auth/register` | Create account |
+| `logout()` | POST `/auth/logout` | End session |
+| `refreshToken()` | POST `/auth/refresh` | Get new tokens |
+
+### Token Management Methods
+
+| Method | Purpose |
+|--------|---------|
+| `setAccessToken()` | Store access token |
+| `getAccessToken()` | Retrieve access token |
+| `setRefreshToken()` | Store refresh token |
+| `getRefreshToken()` | Retrieve refresh token |
+| `clearTokens()` | Remove all tokens |
+| `storeUser()` | Store user data |
+| `getStoredUser()` | Retrieve user data |
+
+### API Response Handling
+
+API returns wrapped responses:
+```typescript
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+```
+
+Service extracts data using:
+```typescript
+.pipe(map((response) => response.data))
+```
+
+### App Constants
+
+```typescript
+export class AppConstants {
+  static ACCESS_TOKEN_KEY = 'ACCESS_TOKEN';
+  static REFRESH_TOKEN_KEY = 'REFRESH_TOKEN';
+  static USER_KEY = 'USER';
+}
+```
+
+### Effects Updated
+
+Auth effects now use AuthService for API calls with `exhaustMap` pattern.
 
 ---
 
