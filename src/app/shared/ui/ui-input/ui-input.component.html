@@ -1,0 +1,16 @@
+<div class="ui-input-wrapper">
+  @if (label) {
+    <label [for]="inputId">{{ label }}</label>
+  }
+  <input
+    pInputText
+    [id]="inputId"
+    [type]="type"
+    [placeholder]="placeholder"
+    [formControl]="control"
+    class="w-full"
+  />
+  @if (control.touched && control.errors && errorMessage) {
+    <small class="p-error">{{ errorMessage }}</small>
+  }
+</div>

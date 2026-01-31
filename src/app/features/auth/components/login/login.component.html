@@ -1,0 +1,33 @@
+<ui-card header="Login">
+  <form [formGroup]="form" (ngSubmit)="onSubmit()">
+    <ui-message severity="error" [text]="(authStatus$ | async)?.error ?? ''" />
+
+    <ui-input
+      label="Email"
+      type="email"
+      placeholder="Enter your email"
+      [control]="emailControl"
+      errorMessage="Valid email is required"
+    />
+
+    <ui-input-password
+      label="Password"
+      placeholder="Enter your password"
+      [control]="passwordControl"
+      errorMessage="Password must be at least 6 characters"
+    />
+
+    <ui-button
+      type="submit"
+      label="Login"
+      [loading]="(authStatus$ | async)?.isLoading ?? false"
+      [disabled]="form.invalid"
+      styleClass="w-full"
+    />
+  </form>
+  <!-- After the button -->
+  <div class="mt-4 text-center">
+    <span class="text-gray-600">Don't have an account? </span>
+    <a routerLink="/auth/register" class="text-primary font-medium">Register</a>
+  </div>
+</ui-card>

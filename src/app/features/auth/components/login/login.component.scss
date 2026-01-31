@@ -1,0 +1,11 @@
+:host {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+ui-card {
+  max-width: 30rem;
+  min-width: 20rem;
+}
