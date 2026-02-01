@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
+import { Router } from '@angular/router';
 import { map, Observable, tap } from 'rxjs';
 
 import {
@@ -17,6 +18,7 @@ import { ApiResponse } from '../../models/api/api-response.model';
 })
 export class AuthService {
   private http = inject(HttpClient);
+  private router = inject(Router);
 
   private apiUrl = environment.apiUrl;
 
@@ -25,7 +27,10 @@ export class AuthService {
       .post<ApiResponse<AuthResponse>>(`${this.apiUrl}/auth/login`, request)
       .pipe(
         map((response) => response.data),
-        tap((response) => this.handleAuthResponse(response)),
+        tap((response) => {
+          this.router.navigate(['/dashboard']);
+          this.handleAuthResponse(response);
+        }),
       );
   }
 
@@ -34,7 +39,10 @@ export class AuthService {
       .post<ApiResponse<AuthResponse>>(`${this.apiUrl}/auth/register`, request)
       .pipe(
         map((response) => response.data),
-        tap((response) => this.handleAuthResponse(response)),
+        tap((response) => {
+          this.router.navigate(['/auth/login']);
+          this.handleAuthResponse(response);
+        }),
       );
   }
 
@@ -42,6 +50,7 @@ export class AuthService {
     return this.http.post<void>(`${this.apiUrl}/auth/logout`, {}).pipe(
       tap(() => {
         this.clearTokens();
+        this.router.navigate(['/auth/login']);
       }),
     );
   }

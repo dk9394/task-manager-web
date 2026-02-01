@@ -601,13 +601,195 @@ export class UiInputComponent {
 
 ## Step 9: Register Component
 
-*(To be documented after completion)*
+Registration form with custom validators and NgRx integration.
+
+### Files Created
+
+```
+src/app/
+├── features/auth/components/register/
+│   ├── register.component.ts
+│   ├── register.component.html
+│   └── register.component.scss
+├── models/auth/
+│   └── register-form.model.ts
+└── shared/utils/
+    └── serialize-register-form-data.ts
+```
+
+### Register Component
+
+```typescript
+@Component({
+  selector: 'app-register',
+  imports: [
+    ReactiveFormsModule,
+    RouterModule,
+    UiCardComponent,
+    UiInputComponent,
+    UiInputPasswordComponent,
+    UiButtonComponent,
+  ],
+  templateUrl: './register.component.html',
+})
+export class RegisterComponent implements OnInit {
+  fb = inject(NonNullableFormBuilder);
+  store = inject(Store);
+
+  form!: FormGroup<RegisterForm>;
+
+  ngOnInit(): void {
+    this.initializeForm();
+  }
+
+  onSubmit(): void {
+    if (!this.form.valid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+    this.store.dispatch(
+      AuthActions.register({
+        request: SerializeRegisterFormData(this.form.getRawValue()),
+      }),
+    );
+  }
+
+  private initializeForm(): void {
+    this.form = this.fb.group(
+      {
+        name: ['', [Validators.required, Validators.minLength(2)]],
+        email: ['', [Validators.required, Validators.email]],
+        password: ['', [Validators.required, this.passwordStrengthValidator()]],
+        confirmPassword: ['', [Validators.required]],
+      },
+      { validators: [this.passwordMatchVaidator] }
+    );
+  }
+}
+```
+
+### Custom Validators
+
+**Password Strength Validator (Field-Level)**:
+```typescript
+private passwordStrengthValidator(): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = control.value;
+    if (!value) return null;
+
+    const hasUppercase = /[A-Z]/.test(value);
+    const hasLowercase = /[a-z]/.test(value);
+    const hasNumber = /\d/.test(value);
+
+    const isValid = hasUppercase && hasLowercase && hasNumber;
+    return isValid ? null : { passwordStrength: 'Password must contain...' };
+  };
+}
+```
+
+**Password Match Validator (Form-Level)**:
+```typescript
+private passwordMatchVaidator(group: AbstractControl): ValidationErrors | null {
+  const password = group.get('password');
+  const confirmPassword = group.get('confirmPassword');
+
+  if (password?.value && confirmPassword?.value &&
+      password.value !== confirmPassword.value) {
+    const error = { passwordMismatch: 'Password is not matched' };
+    confirmPassword.setErrors(error);  // Set error on control for template
+    return error;
+  }
+  return null;
+}
+```
+
+### Dynamic Error Messages
+
+```typescript
+get passwordErrors(): string {
+  let errorMsg = '';
+  if (this.passwordControl.touched && this.passwordControl.errors) {
+    if (this.passwordControl.hasError('required')) {
+      errorMsg = 'Password is required';
+    }
+    if (this.passwordControl.hasError('passwordStrength')) {
+      errorMsg = this.passwordControl.errors['passwordStrength'];
+    }
+  }
+  return errorMsg;
+}
+```
+
+### Key Concepts
+
+- **Form-Level Validators**: Passed in form group options `{ validators: [...] }`
+- **Field-Level Validators**: Passed in control definition array
+- **setErrors()**: Manually set errors on controls from form-level validators
+- **Getter-based error messages**: Dynamic error messages based on validation state
 
 ---
 
 ## Step 10: Auth Layout
 
-*(To be documented after completion)*
+Shared layout component for authentication pages.
+
+### Files Created
+
+```
+src/app/features/auth/components/auth-layout/
+├── auth-layout.component.ts
+├── auth-layout.component.html
+└── auth-layout.component.scss
+```
+
+### Auth Layout Component
+
+```typescript
+import { Component } from '@angular/core';
+import { RouterOutlet } from '@angular/router';
+
+@Component({
+  selector: 'app-auth-layout',
+  imports: [RouterOutlet],
+  templateUrl: './auth-layout.component.html',
+})
+export class AuthLayoutComponent {}
+```
+
+### Template
+
+```html
+<div class="min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-md p-4">
+    <router-outlet />
+  </div>
+</div>
+```
+
+### Route Configuration
+
+```typescript
+export const routes: Routes = [
+  {
+    path: 'auth',
+    component: AuthLayoutComponent,  // Layout wraps children
+    canActivate: [guestGuard],
+    children: [
+      { path: 'login', component: LoginComponent },
+      { path: 'register', component: RegisterComponent },
+    ],
+  },
+];
+```
+
+### Key Concepts
+
+- **`<router-outlet>`**: Renders child route components (login/register)
+- **Layout Pattern**: Parent component wraps all auth pages
+- **Tailwind Classes**:
+  - `min-h-screen` - Full viewport height
+  - `flex items-center justify-center` - Center content
+  - `max-w-md` - Constrain form width
 
 ---
 

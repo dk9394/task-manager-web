@@ -7,6 +7,7 @@ import {
   Validators,
 } from '@angular/forms';
 import { AsyncPipe } from '@angular/common';
+import { RouterModule } from '@angular/router';
 
 import { Store } from '@ngrx/store';
 
@@ -18,7 +19,6 @@ import { UiInputComponent } from '../../../../shared/ui/ui-input/ui-input.compon
 import { UiInputPasswordComponent } from '../../../../shared/ui/ui-input-password/ui-input-password.component';
 import { UiButtonComponent } from '../../../../shared/ui/ui-button/ui-button.component';
 import { selectAuthStatus } from '../../store/auth.selectors';
-import { RouterModule } from '@angular/router';
 
 @Component({
   selector: 'app-login',

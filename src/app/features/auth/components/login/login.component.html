@@ -21,11 +21,10 @@
       type="submit"
       label="Login"
       [loading]="(authStatus$ | async)?.isLoading ?? false"
-      [disabled]="form.invalid"
-      styleClass="w-full"
+      [disabled]="form.invalid && form.touched"
+      styleClass="w-full mt-4"
     />
   </form>
-  <!-- After the button -->
   <div class="mt-4 text-center">
     <span class="text-gray-600">Don't have an account? </span>
     <a routerLink="/auth/register" class="text-primary font-medium">Register</a>

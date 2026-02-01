@@ -1,1 +1,44 @@
-<p>register works!</p>
+<ui-card header="Register">
+  <form (ngSubmit)="onSubmit()" [formGroup]="form" #formRef>
+    <ui-input
+      label="Name"
+      type="text"
+      placeholder="Enter your name"
+      [control]="nameControl"
+      [errorMessage]="nameErrors"
+    ></ui-input>
+
+    <ui-input
+      label="Email"
+      type="email"
+      placeholder="Enter your email"
+      [control]="emailControl"
+      [errorMessage]="emailErrors"
+    ></ui-input>
+
+    <ui-input-password
+      label="Password"
+      placeholder="Enter your password"
+      [control]="passwordControl"
+      [errorMessage]="passwordErrors"
+    />
+
+    <ui-input-password
+      label="Confirm Password"
+      placeholder="Confirm your password"
+      [control]="confirmPasswordControl"
+      [errorMessage]="confirmPasswordErrors"
+    />
+
+    <ui-button
+      type="submit"
+      label="Register"
+      [disabled]="form.invalid && form.touched"
+      styleClass="w-full mt-4"
+    />
+    <div class="mt-4 text-center">
+      <span class="text-gray-600">Already have an account? </span>
+      <a routerLink="/auth/login" class="text-primary font-medium">Login</a>
+    </div>
+  </form>
+</ui-card>
