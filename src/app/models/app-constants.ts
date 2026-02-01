@@ -10,4 +10,18 @@ export class AppConstants {
     '/auth/forgot-password',
     '/auth/reset-password',
   ];
+
+  static ERROR_SEVERITY = {
+    SUCCESS: 'success',
+    ERROR: 'error',
+    WARN: 'warn',
+    INFO: 'info',
+  };
+
+  static LOG_LEVEL = {
+    DEBUG: 'DEBUG',
+    INFO: 'INFO',
+    WARN: 'WARN',
+    ERROR: 'ERROR',
+  };
 }

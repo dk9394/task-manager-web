@@ -17,10 +17,12 @@ import {
 
 import { AuthService } from '../services/auth.service';
 import { AppConstants } from '../../models/app-constants';
+import { LoggerService } from '../services/logger.service';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const authService = inject(AuthService);
   const router = inject(Router);
+  const loggerService = inject(LoggerService);
 
   // Skip auth for public URLs
   const isPublicUrl = AppConstants.PUBLIC_URLS.some((url) =>
@@ -40,7 +42,15 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   return next(authReq).pipe(
     catchError((error: HttpErrorResponse) => {
       if (error.status === 401 && !isPublicUrl) {
-        return handleUnauthorized(authReq, next, authService, router);
+        // Warning
+        loggerService.warn('AccessToken is expired', 'AuthInterceptor');
+        return handleUnauthorized(
+          authReq,
+          next,
+          authService,
+          router,
+          loggerService,
+        );
       }
       return throwError(() => error);
     }),
@@ -52,6 +62,7 @@ function handleUnauthorized(
   next: HttpHandlerFn,
   authService: AuthService,
   router: Router,
+  loggerService: LoggerService,
 ) {
   const refreshToken = authService.getRefreshToken();
 
@@ -76,8 +87,15 @@ function handleUnauthorized(
       return next(newReq);
     }),
     catchError((error) => {
-      authService.clearTokens();
-      router.navigate(['/auth/login']);
+      if (error instanceof HttpErrorResponse && error.status === 401) {
+        authService.clearTokens();
+        router.navigate(['/auth/login']);
+      } else {
+        // Error
+        loggerService.error('Login failed', error, 'AuthEffects', {
+          email: 'xyz@example.com',
+        });
+      }
       return throwError(() => error);
     }),
   );

@@ -19,6 +19,7 @@ import { UiInputComponent } from '../../../../shared/ui/ui-input/ui-input.compon
 import { UiInputPasswordComponent } from '../../../../shared/ui/ui-input-password/ui-input-password.component';
 import { UiButtonComponent } from '../../../../shared/ui/ui-button/ui-button.component';
 import { selectAuthStatus } from '../../store/auth.selectors';
+import { LoggerService } from '../../../../core/services/logger.service';
 
 @Component({
   selector: 'app-login',
@@ -38,6 +39,7 @@ import { selectAuthStatus } from '../../store/auth.selectors';
 export class LoginComponent implements OnInit {
   private fb = inject(NonNullableFormBuilder);
   private store = inject(Store);
+  private loggerService = inject(LoggerService);
 
   form!: FormGroup<LoginForm>;
   authStatus$ = this.store.select(selectAuthStatus);
@@ -72,5 +74,8 @@ export class LoginComponent implements OnInit {
         { validators: [Validators.required, Validators.minLength(6)] },
       ],
     });
+
+    // Debug (dev only)
+    this.loggerService.debug('Form initialized', 'LoginComponent');
   }
 }

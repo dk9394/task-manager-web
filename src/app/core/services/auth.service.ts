@@ -1,7 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Router } from '@angular/router';
-import { map, Observable, tap } from 'rxjs';
+import { map, Observable } from 'rxjs';
 
 import {
   AuthResponse,
@@ -12,53 +11,37 @@ import { environment } from '../../../environments/environment';
 import { User } from '../../models/auth/user.model';
 import { AppConstants } from '../../models/app-constants';
 import { ApiResponse } from '../../models/api/api-response.model';
+import { LoggerService } from './logger.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AuthService {
   private http = inject(HttpClient);
-  private router = inject(Router);
+  private loggerService = inject(LoggerService);
 
   private apiUrl = environment.apiUrl;
 
   login(request: LoginRequest): Observable<AuthResponse> {
     return this.http
       .post<ApiResponse<AuthResponse>>(`${this.apiUrl}/auth/login`, request)
-      .pipe(
-        map((response) => response.data),
-        tap((response) => {
-          this.router.navigate(['/dashboard']);
-          this.handleAuthResponse(response);
-        }),
-      );
+      .pipe(map((response) => response.data));
   }
 
   register(request: RegisterRequest): Observable<AuthResponse> {
     return this.http
       .post<ApiResponse<AuthResponse>>(`${this.apiUrl}/auth/register`, request)
-      .pipe(
-        map((response) => response.data),
-        tap((response) => {
-          this.router.navigate(['/auth/login']);
-          this.handleAuthResponse(response);
-        }),
-      );
+      .pipe(map((response) => response.data));
   }
 
   logout(): Observable<void> {
-    return this.http.post<void>(`${this.apiUrl}/auth/logout`, {}).pipe(
-      tap(() => {
-        this.clearTokens();
-        this.router.navigate(['/auth/login']);
-      }),
-    );
+    return this.http.post<void>(`${this.apiUrl}/auth/logout`, {});
   }
 
   refreshToken(): Observable<AuthResponse> {
     const refreshToken = this.getRefreshToken() ?? '';
     return this.http
-      .post<ApiResponse<AuthResponse>>(`${this.apiUrl}/auth/refresh`, {
+      .post<ApiResponse<AuthResponse>>(`${this.apiUrl}/auth/refresh-token`, {
         refreshToken,
       })
       .pipe(map((response) => response.data));
@@ -98,12 +81,5 @@ export class AuthService {
   getStoredUser(): User | null {
     const user = localStorage.getItem(AppConstants.USER_KEY);
     return user ? JSON.parse(user) : null;
-  }
-
-  // Helper methods
-  private handleAuthResponse(response: AuthResponse): void {
-    this.setAccessToken(response.tokens.accessToken);
-    this.setRefreshToken(response.tokens.refreshToken);
-    this.storeUser(response.user);
   }
 }

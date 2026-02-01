@@ -1,16 +1,20 @@
 import { inject, Injectable } from '@angular/core';
-import { Router } from '@angular/router';
 import { Actions, createEffect, ofType } from '@ngrx/effects';
-import { catchError, exhaustMap, map, of } from 'rxjs';
+import { catchError, exhaustMap, map, of, tap } from 'rxjs';
+import { Router } from '@angular/router';
 
 import { AuthActions } from './auth.actions';
 import { AuthService } from '../../../core/services/auth.service';
+import { LoggerService } from '../../../core/services/logger.service';
+import { ToastService } from '../../../shared/services/toast.service';
 
 @Injectable()
 export class AuthEffects {
   private actions$ = inject(Actions);
-  private router = inject(Router);
   private authService = inject(AuthService);
+  private loggerService = inject(LoggerService);
+  private router = inject(Router);
+  private toast = inject(ToastService);
 
   login$ = createEffect(() => {
     return this.actions$.pipe(
@@ -24,6 +28,30 @@ export class AuthEffects {
     );
   });
 
+  loginSuccess$ = createEffect(
+    () => {
+      return this.actions$.pipe(
+        ofType(AuthActions.loginSuccess),
+        tap(({ response }) => {
+          // Store tokens
+          this.authService.setAccessToken(response.tokens.accessToken);
+          this.authService.setRefreshToken(response.tokens.refreshToken);
+          this.authService.storeUser(response.user);
+
+          // Log success
+          this.loggerService.info('User logged in', 'AuthEffects', {
+            userId: response.user.id,
+          });
+          this.toast.success('You are logged in successfully.', 'Login');
+
+          // Navigate to dashboard
+          this.router.navigate(['/dashboard']);
+        }),
+      );
+    },
+    { dispatch: false },
+  );
+
   register$ = createEffect(() => {
     return this.actions$.pipe(
       ofType(AuthActions.register),
@@ -35,6 +63,30 @@ export class AuthEffects {
       }),
     );
   });
+
+  registerSuccess$ = createEffect(
+    () => {
+      return this.actions$.pipe(
+        ofType(AuthActions.registerSuccess),
+        tap(({ response }) => {
+          // Store tokens
+          this.authService.setAccessToken(response.tokens.accessToken);
+          this.authService.setRefreshToken(response.tokens.refreshToken);
+          this.authService.storeUser(response.user);
+
+          // Log success
+          this.loggerService.info('User registered', 'AuthEffects', {
+            userId: response.user.id,
+          });
+          this.toast.success('You are registered successfully', 'Register');
+
+          // Navigate to dashboard
+          this.router.navigate(['/dashboard']);
+        }),
+      );
+    },
+    { dispatch: false },
+  );
 
   logout$ = createEffect(() => {
     return this.actions$.pipe(
@@ -48,6 +100,26 @@ export class AuthEffects {
     );
   });
 
+  logoutSuccess$ = createEffect(
+    () => {
+      return this.actions$.pipe(
+        ofType(AuthActions.logoutSuccess),
+        tap(() => {
+          // Clear tokens
+          this.authService.clearTokens();
+
+          // Log
+          this.loggerService.info('User logged out', 'AuthEffects');
+          this.toast.success('You are loggedout successfully', 'Logout');
+
+          // Navigate to login
+          this.router.navigate(['/auth/login']);
+        }),
+      );
+    },
+    { dispatch: false },
+  );
+
   refreshToken$ = createEffect(() => {
     return this.actions$.pipe(
       ofType(AuthActions.refreshToken),
@@ -59,6 +131,19 @@ export class AuthEffects {
       }),
     );
   });
+
+  refreshTokenSuccess$ = createEffect(
+    () => {
+      return this.actions$.pipe(
+        ofType(AuthActions.refreshTokenSuccess),
+        tap(({ response }) => {
+          this.authService.setAccessToken(response.tokens.accessToken);
+          this.authService.setRefreshToken(response.tokens.refreshToken);
+        }),
+      );
+    },
+    { dispatch: false },
+  );
 
   loadUserFromStorage$ = createEffect(() => {
     return this.actions$.pipe(
