@@ -500,4 +500,512 @@ Write your answers, then we'll compare when starting Part 2.
 
 ---
 
-**Next: Part 2 - Testing Tools & Setup (Jasmine, Karma, TestBed)**
+---
+
+## Part 2: Testing Tools & Setup
+
+### 2.1 Jasmine - Test Framework
+
+Jasmine is the default test framework in Angular. It provides the syntax for writing tests.
+
+#### Core Building Blocks
+
+```typescript
+// describe() - Groups related tests (test suite)
+describe('Calculator', () => {
+
+  // it() - Individual test case (spec)
+  it('should add two numbers', () => {
+
+    // expect() - Assertion
+    expect(2 + 3).toBe(5);
+  });
+});
+```
+
+Three functions form the foundation:
+
+| Function | Purpose | Analogy |
+|----------|---------|---------|
+| `describe()` | Group tests | A chapter in a book |
+| `it()` | Single test | A sentence describing behavior |
+| `expect()` | Assertion | The actual verification |
+
+#### Nesting describe Blocks
+
+```typescript
+describe('AuthService', () => {
+
+  describe('login()', () => {
+    it('should return user on valid credentials', () => { });
+    it('should throw error on invalid email', () => { });
+  });
+
+  describe('logout()', () => {
+    it('should clear tokens', () => { });
+    it('should navigate to login', () => { });
+  });
+});
+```
+
+This creates a readable output:
+
+```
+AuthService
+  login()
+    ✓ should return user on valid credentials
+    ✓ should throw error on invalid email
+  logout()
+    ✓ should clear tokens
+    ✓ should navigate to login
+```
+
+#### Jasmine Matchers
+
+Matchers are the `toXxx()` methods on `expect()`:
+
+**Equality:**
+
+| Matcher | Description | Example |
+|---------|-------------|---------|
+| `toBe()` | Strict equality (`===`) | `expect(1).toBe(1)` |
+| `toEqual()` | Deep equality (objects/arrays) | `expect({a:1}).toEqual({a:1})` |
+
+**Important: `toBe` vs `toEqual`**
+
+```typescript
+// toBe - checks reference (same object in memory)
+const arr = [1, 2];
+expect(arr).toBe(arr);        // ✅ Same reference
+expect([1,2]).toBe([1,2]);    // ❌ Different references!
+
+// toEqual - checks value (deep comparison)
+expect([1,2]).toEqual([1,2]); // ✅ Same values
+expect({a:1}).toEqual({a:1}); // ✅ Same values
+
+// Rule of thumb:
+// Primitives (string, number, boolean) → toBe
+// Objects, Arrays → toEqual
+```
+
+**Truthiness:**
+
+| Matcher | Description | Example |
+|---------|-------------|---------|
+| `toBeTruthy()` | Truthy check | `expect('hello').toBeTruthy()` |
+| `toBeFalsy()` | Falsy check | `expect(null).toBeFalsy()` |
+| `toBeNull()` | Null check | `expect(null).toBeNull()` |
+| `toBeUndefined()` | Undefined check | `expect(undefined).toBeUndefined()` |
+| `toBeDefined()` | Not undefined | `expect(value).toBeDefined()` |
+
+**Comparison:**
+
+| Matcher | Description | Example |
+|---------|-------------|---------|
+| `toBeGreaterThan()` | `>` | `expect(5).toBeGreaterThan(3)` |
+| `toBeLessThan()` | `<` | `expect(3).toBeLessThan(5)` |
+| `toBeGreaterThanOrEqual()` | `>=` | `expect(5).toBeGreaterThanOrEqual(5)` |
+
+**Content:**
+
+| Matcher | Description | Example |
+|---------|-------------|---------|
+| `toContain()` | Array/string contains | `expect([1,2]).toContain(1)` |
+| `toMatch()` | Regex match | `expect('hello').toMatch(/ell/)` |
+
+**Spy-specific:**
+
+| Matcher | Description | Example |
+|---------|-------------|---------|
+| `toHaveBeenCalled()` | Spy was called | `expect(spy).toHaveBeenCalled()` |
+| `toHaveBeenCalledWith()` | Spy called with args | `expect(spy).toHaveBeenCalledWith('x')` |
+| `toHaveBeenCalledTimes()` | Call count | `expect(spy).toHaveBeenCalledTimes(2)` |
+
+**Negation with `.not`:**
+
+```typescript
+expect(5).not.toBe(3);
+expect([]).not.toContain(1);
+expect(service).not.toBeNull();
+```
+
+---
+
+### 2.2 Setup & Teardown Hooks
+
+```typescript
+describe('MyService', () => {
+  let service: MyService;
+
+  // Runs ONCE before all tests in this describe
+  beforeAll(() => {
+    // Expensive one-time setup (rarely used)
+  });
+
+  // Runs BEFORE EACH test
+  beforeEach(() => {
+    service = new MyService(); // Fresh instance per test
+  });
+
+  // Runs AFTER EACH test
+  afterEach(() => {
+    // Cleanup (clear mocks, localStorage, etc.)
+  });
+
+  // Runs ONCE after all tests
+  afterAll(() => {
+    // Teardown (rarely used)
+  });
+});
+```
+
+**Execution order:**
+
+```
+beforeAll()
+  beforeEach()  → it('test 1')  → afterEach()
+  beforeEach()  → it('test 2')  → afterEach()
+  beforeEach()  → it('test 3')  → afterEach()
+afterAll()
+```
+
+**Why `beforeEach` matters - Test Isolation:**
+
+```typescript
+// ❌ BAD - Tests share state, order-dependent
+describe('Counter', () => {
+  const counter = new Counter(); // Shared!
+
+  it('should start at 0', () => {
+    expect(counter.value).toBe(0);  // Passes first run
+  });
+
+  it('should increment', () => {
+    counter.increment();
+    expect(counter.value).toBe(1);  // Passes
+  });
+
+  it('should still be at 0', () => {
+    expect(counter.value).toBe(0);  // FAILS! value is 1
+  });
+});
+
+// ✅ GOOD - Each test gets fresh instance
+describe('Counter', () => {
+  let counter: Counter;
+
+  beforeEach(() => {
+    counter = new Counter(); // Fresh every time
+  });
+
+  it('should start at 0', () => {
+    expect(counter.value).toBe(0);  // Always passes
+  });
+
+  it('should increment', () => {
+    counter.increment();
+    expect(counter.value).toBe(1);  // Always passes
+  });
+});
+```
+
+---
+
+### 2.3 Karma - Test Runner
+
+Karma launches a real browser, runs your tests, and reports results.
+
+#### How Karma Works
+
+```
+┌────────────┐     ┌──────────┐     ┌──────────────┐
+│ Your Tests │ ──► │  Karma   │ ──► │   Browser    │
+│ (.spec.ts) │     │  Server  │     │ (Chrome)     │
+└────────────┘     └──────────┘     └──────┬───────┘
+                                           │
+                        ┌──────────────────┘
+                        ▼
+                   ┌──────────┐
+                   │ Results  │
+                   │ Terminal │
+                   └──────────┘
+```
+
+#### CLI Commands
+
+```bash
+# Run all tests (watch mode - re-runs on file change)
+ng test
+
+# Run once and exit (useful for CI)
+ng test --watch=false
+
+# Run with code coverage report
+ng test --code-coverage
+
+# Run in headless mode (no browser window)
+ng test --browsers=ChromeHeadless --watch=false
+
+# Run specific test file
+ng test --include=**/auth.service.spec.ts
+
+# Run tests matching pattern
+ng test --include=**/store/*.spec.ts
+```
+
+#### Reading Test Output
+
+```
+// Success:
+Chrome 120.0: Executed 15 of 15 SUCCESS (0.234 secs)
+
+// Failure:
+Chrome 120.0: Executed 15 of 15 (2 FAILED) (0.456 secs)
+
+FAILED TESTS:
+  AuthService
+    login()
+      ✗ should return user on valid credentials
+        Expected undefined to equal { id: '1', name: 'Test' }
+        at line 42 in auth.service.spec.ts
+```
+
+---
+
+### 2.4 Angular TestBed
+
+TestBed is Angular's testing utility that creates a testing module similar to your `app.config.ts`.
+
+#### Why TestBed?
+
+Angular uses dependency injection. Services have dependencies:
+
+```typescript
+// AuthService depends on HttpClient
+class AuthService {
+  private http = inject(HttpClient);  // Where does this come from in tests?
+}
+
+// TestBed provides the DI container for tests
+TestBed.configureTestingModule({
+  providers: [
+    AuthService,
+    provideHttpClient(),
+    provideHttpClientTesting(),  // Mock HTTP
+  ],
+});
+```
+
+#### TestBed for Services
+
+```typescript
+describe('AuthService', () => {
+  let service: AuthService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    // Step 1: Configure testing module
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        provideHttpClient(),
+        provideHttpClientTesting(),
+      ],
+    });
+
+    // Step 2: Get instances from DI
+    service = TestBed.inject(AuthService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  it('should be created', () => {
+    expect(service).toBeTruthy();
+  });
+});
+```
+
+#### TestBed for Components
+
+```typescript
+describe('LoginComponent', () => {
+  let component: LoginComponent;
+  let fixture: ComponentFixture<LoginComponent>;
+
+  beforeEach(async () => {
+    // Step 1: Configure (async for template compilation)
+    await TestBed.configureTestingModule({
+      imports: [LoginComponent],  // Standalone component
+      providers: [
+        provideMockStore({ initialState }),
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+
+    // Step 2: Create component
+    fixture = TestBed.createComponent(LoginComponent);
+    component = fixture.componentInstance;
+
+    // Step 3: Trigger initial change detection
+    fixture.detectChanges();
+  });
+});
+```
+
+#### Key TestBed Concepts
+
+| Concept | Purpose |
+|---------|---------|
+| `configureTestingModule()` | Set up providers, imports |
+| `TestBed.inject()` | Get service from DI |
+| `createComponent()` | Create component instance |
+| `fixture` | Wrapper with DOM access + change detection |
+| `fixture.componentInstance` | The component class instance |
+| `fixture.nativeElement` | The actual DOM element |
+| `fixture.detectChanges()` | Trigger change detection manually |
+| `compileComponents()` | Compile templates (async) |
+| `NO_ERRORS_SCHEMA` | Ignore unknown child elements |
+
+#### fixture.detectChanges() - Why Manual?
+
+In tests, change detection doesn't run automatically:
+
+```typescript
+it('should display updated name', () => {
+  component.userName = 'John';
+  // DOM still shows old value!
+
+  fixture.detectChanges(); // NOW the DOM updates
+
+  const el = fixture.nativeElement.querySelector('.name');
+  expect(el.textContent).toContain('John');
+});
+```
+
+#### NO_ERRORS_SCHEMA - Shallow vs Deep Testing
+
+```typescript
+// LoginComponent uses <ui-button>, <ui-input>
+
+// Option A: Deep Test - Import child components
+imports: [LoginComponent, UiButtonComponent, UiInputComponent]
+// Tests component + children interaction
+
+// Option B: Shallow Test - Ignore children
+schemas: [NO_ERRORS_SCHEMA]
+// Tests only component logic
+```
+
+| Approach | When to Use |
+|----------|-------------|
+| Deep (import children) | Testing component interactions |
+| Shallow (NO_ERRORS_SCHEMA) | Testing component logic only |
+
+---
+
+### 2.5 Test File Convention
+
+Test files sit next to source files with `.spec.ts` suffix:
+
+```
+src/app/core/services/
+├── auth.service.ts           ← Source
+├── auth.service.spec.ts      ← Test
+├── logger.service.ts
+└── logger.service.spec.ts
+
+src/app/features/auth/components/login/
+├── login.component.ts        ← Source
+├── login.component.spec.ts   ← Test
+├── login.component.html
+└── login.component.scss
+```
+
+#### Anatomy of a Spec File
+
+```typescript
+// ──── 1. IMPORTS ────
+import { TestBed } from '@angular/core/testing';
+import { AuthService } from './auth.service';
+
+// ──── 2. TEST SUITE ────
+describe('AuthService', () => {
+
+  // ──── 3. VARIABLES ────
+  let service: AuthService;
+
+  // ──── 4. SETUP ────
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [AuthService],
+    });
+    service = TestBed.inject(AuthService);
+  });
+
+  // ──── 5. TEARDOWN ────
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  // ──── 6. TESTS (grouped by feature) ────
+  describe('login()', () => {
+    it('should call API with correct payload', () => {
+      // Arrange
+      const credentials = { email: 'a@b.com', password: '123' };
+
+      // Act
+      service.login(credentials);
+
+      // Assert
+      expect(/* something */).toBe(/* expected */);
+    });
+  });
+});
+```
+
+---
+
+### 2.6 Your Project's Test Setup
+
+Your project uses:
+
+| Tool | Config |
+|------|--------|
+| Framework | Jasmine |
+| Runner | Karma |
+| Builder | `@angular-devkit/build-angular:karma` |
+| TS Config | `tsconfig.spec.json` |
+| Polyfills | `zone.js`, `zone.js/testing` |
+
+To verify everything works, run:
+
+```bash
+ng test --watch=false
+```
+
+---
+
+## Summary - Part 2
+
+| Concept | Key Takeaway |
+|---------|--------------|
+| `describe()` | Groups related tests into suites |
+| `it()` | Individual test case |
+| `expect().toBe()` | Primitives, `toEqual()` for objects |
+| `beforeEach` | Fresh setup for each test (isolation) |
+| Karma | Runs tests in real browser |
+| TestBed | Angular's DI container for tests |
+| `fixture` | Component wrapper with DOM + change detection |
+| `.spec.ts` | Test files sit next to source files |
+
+---
+
+## Practice Exercise
+
+Try running `ng test --watch=false` in your project. Observe:
+1. Which spec files already exist?
+2. Do any default tests pass or fail?
+3. What does the output look like?
+
+---
+
+**Next: Part 3 - Unit Testing Patterns (AAA, async, HTTP mocking)**
