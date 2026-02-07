@@ -2561,3 +2561,595 @@ Think about your auth module's full login flow:
 ---
 
 **Next: Part 6 - Mocking & Test Doubles (spies, stubs, fakes, and when to use each)**
+
+---
+
+---
+
+## Part 6: Mocking & Test Doubles
+
+"Test doubles" is the umbrella term for any object that replaces a real dependency in tests. Understanding the different types and when to use each is essential for writing effective, maintainable tests.
+
+### 6.1 What Are Test Doubles?
+
+When you test a unit, you don't want its dependencies to interfere. Test doubles replace those dependencies with controlled substitutes.
+
+```
+REAL CODE                          TEST CODE
+─────────                          ─────────
+LoginComponent                     LoginComponent
+    │                                  │
+    ▼                                  ▼
+Store (real NgRx)                  MockStore (test double)
+    │                                  │
+    ▼                                  ▼
+AuthService (real HTTP)            SpyObj (test double)
+    │                                  │
+    ▼                                  ▼
+Backend Server                     Nothing (controlled)
+```
+
+---
+
+### 6.2 Types of Test Doubles
+
+There are 5 types of test doubles. Each serves a different purpose:
+
+```
+┌──────────┬───────────────────────────────────────────────┐
+│  Type    │  Purpose                                      │
+├──────────┼───────────────────────────────────────────────┤
+│  Dummy   │  Fills a parameter, never actually used       │
+│  Stub    │  Returns predetermined data                   │
+│  Spy     │  Records calls + can return data              │
+│  Mock    │  Pre-programmed with expectations             │
+│  Fake    │  Working implementation (simplified)          │
+└──────────┴───────────────────────────────────────────────┘
+```
+
+#### 6.2.1 Dummy
+
+A dummy is passed around but never actually used. It just satisfies a parameter requirement.
+
+```typescript
+// LoggerService is injected but we don't care about it in this test
+const dummyLogger = {} as LoggerService;
+
+TestBed.configureTestingModule({
+  providers: [
+    AuthService,
+    { provide: LoggerService, useValue: dummyLogger },
+  ],
+});
+```
+
+**When to use:** When a dependency is required by the constructor but irrelevant to the test.
+
+#### 6.2.2 Stub
+
+A stub provides **predetermined answers** to calls. It doesn't track whether it was called.
+
+```typescript
+// Stub: always returns the same value
+const authServiceStub = {
+  getAccessToken: () => 'fake-token-123',
+  getRefreshToken: () => 'fake-refresh-456',
+  isAuthenticated: () => true,
+};
+
+TestBed.configureTestingModule({
+  providers: [
+    { provide: AuthService, useValue: authServiceStub },
+  ],
+});
+```
+
+**When to use:** When you need a dependency to return specific data but don't care if/how it was called.
+
+#### 6.2.3 Spy
+
+A spy **wraps or replaces** a method and **records** how it was called (arguments, count, etc.). This is the most common test double in Angular/Jasmine.
+
+```typescript
+// Jasmine Spy Object - tracks ALL calls
+const authServiceSpy = jasmine.createSpyObj('AuthService', [
+  'login', 'logout', 'getAccessToken', 'setAccessToken',
+]);
+
+// Configure what it returns
+authServiceSpy.login.and.returnValue(of(mockResponse));
+authServiceSpy.getAccessToken.and.returnValue('token-123');
+
+// Later, verify it was called correctly
+expect(authServiceSpy.login).toHaveBeenCalledWith(credentials);
+expect(authServiceSpy.login).toHaveBeenCalledTimes(1);
+```
+
+**When to use:** When you need to verify that a dependency was called with the right arguments.
+
+#### 6.2.4 Mock
+
+A mock is pre-programmed with expectations. In Jasmine, spies and mocks overlap — `createSpyObj` essentially creates a mock object.
+
+```typescript
+// Mock with pre-configured behavior
+const mockStore = jasmine.createSpyObj('Store', ['dispatch', 'select']);
+mockStore.select.and.returnValue(of({ isAuthenticated: false }));
+
+// The mock expects dispatch to be called
+// After the test, you verify:
+expect(mockStore.dispatch).toHaveBeenCalledWith(
+  AuthActions.login({ request: credentials })
+);
+```
+
+**When to use:** When you want to verify interactions between your code and its dependencies.
+
+#### 6.2.5 Fake
+
+A fake has a **working implementation** but takes shortcuts (e.g., in-memory database instead of real DB).
+
+```typescript
+// Fake AuthService with in-memory storage
+class FakeAuthService {
+  private token: string | null = null;
+  private users: Map<string, any> = new Map();
+
+  login(credentials: LoginRequest): Observable<AuthResponse> {
+    const user = this.users.get(credentials.email);
+    if (user && user.password === credentials.password) {
+      this.token = 'fake-jwt-token';
+      return of({
+        user: { id: '1', name: 'Test', email: credentials.email },
+        tokens: { accessToken: this.token, refreshToken: 'fake-refresh' },
+      });
+    }
+    return throwError(() => new Error('Invalid credentials'));
+  }
+
+  getAccessToken(): string | null {
+    return this.token;
+  }
+
+  setAccessToken(token: string): void {
+    this.token = token;
+  }
+
+  logout(): Observable<void> {
+    this.token = null;
+    return of(void 0);
+  }
+}
+
+// Use it
+TestBed.configureTestingModule({
+  providers: [
+    { provide: AuthService, useClass: FakeAuthService },
+  ],
+});
+```
+
+**When to use:** When a stub is too simple but the real implementation is too complex. Good for integration tests.
+
+---
+
+### 6.3 Comparison Table
+
+| Type | Returns Data? | Tracks Calls? | Has Logic? | Common In Angular |
+|------|:---:|:---:|:---:|:---:|
+| **Dummy** | No | No | No | `{} as Service` |
+| **Stub** | Yes (fixed) | No | No | `{ method: () => value }` |
+| **Spy** | Configurable | Yes | No | `createSpyObj()` |
+| **Mock** | Configurable | Yes (with expectations) | No | `createSpyObj()` + `expect()` |
+| **Fake** | Yes (computed) | No | Yes | `useClass: FakeService` |
+
+#### Decision Flowchart
+
+```
+Do you need the dependency at all?
+├── NO → Dummy ({} as Service)
+└── YES
+    │
+    Does the test check HOW the dependency was called?
+    ├── YES → Spy / Mock (createSpyObj)
+    └── NO
+        │
+        Does it need dynamic behavior?
+        ├── YES → Fake (useClass: FakeService)
+        └── NO → Stub ({ method: () => fixedValue })
+```
+
+---
+
+### 6.4 Jasmine Spy Deep Dive
+
+Since `jasmine.createSpyObj` is the most frequently used approach in Angular testing, let's master it.
+
+#### Creating Spy Objects
+
+```typescript
+// Method 1: Spy with methods only
+const spy = jasmine.createSpyObj('ServiceName', ['method1', 'method2']);
+
+// Method 2: Spy with methods AND properties
+const spy = jasmine.createSpyObj('ServiceName', ['method1'], {
+  propertyName: 'value',
+});
+
+// Method 3: Spy with methods AND property getters
+const spy = jasmine.createSpyObj('ServiceName', ['method1'], ['propGetter']);
+```
+
+#### Configuring Return Values
+
+```typescript
+const authSpy = jasmine.createSpyObj('AuthService', [
+  'login', 'logout', 'getAccessToken',
+]);
+
+// Return a value
+authSpy.getAccessToken.and.returnValue('token-123');
+
+// Return an Observable
+authSpy.login.and.returnValue(of(mockResponse));
+
+// Return different values on consecutive calls
+authSpy.getAccessToken.and.returnValues('token-1', 'token-2', 'token-3');
+// First call returns 'token-1', second returns 'token-2', etc.
+
+// Throw an error
+authSpy.login.and.throwError(new Error('Network error'));
+
+// Return an Observable error
+authSpy.login.and.returnValue(
+  throwError(() => ({ status: 401, message: 'Unauthorized' }))
+);
+
+// Call through to a fake implementation
+authSpy.login.and.callFake((credentials: any) => {
+  if (credentials.email === 'admin@test.com') {
+    return of(adminResponse);
+  }
+  return of(userResponse);
+});
+```
+
+#### Spy Assertions
+
+```typescript
+// Was it called?
+expect(spy.method).toHaveBeenCalled();
+
+// Was it called with specific arguments?
+expect(spy.method).toHaveBeenCalledWith('arg1', 'arg2');
+
+// How many times was it called?
+expect(spy.method).toHaveBeenCalledTimes(2);
+
+// Was it NOT called?
+expect(spy.method).not.toHaveBeenCalled();
+
+// Get call details
+spy.method.calls.count();           // Number of calls
+spy.method.calls.argsFor(0);        // Arguments of first call
+spy.method.calls.mostRecent().args;  // Arguments of last call
+spy.method.calls.first().args;       // Arguments of first call
+spy.method.calls.allArgs();          // Array of all call arguments
+spy.method.calls.reset();            // Reset call tracking
+```
+
+#### Spy Cheat Sheet
+
+| Method | Purpose |
+|--------|---------|
+| `.and.returnValue(val)` | Always return `val` |
+| `.and.returnValues(a, b, c)` | Return `a`, then `b`, then `c` |
+| `.and.callFake(fn)` | Delegate to custom function |
+| `.and.throwError(err)` | Throw an error when called |
+| `.and.callThrough()` | Call the real method (for `spyOn`) |
+| `.and.stub()` | Do nothing, return undefined |
+| `.calls.count()` | How many times called |
+| `.calls.argsFor(n)` | Arguments of nth call |
+| `.calls.reset()` | Reset tracking |
+
+---
+
+### 6.5 spyOn vs createSpyObj
+
+Two different approaches to creating spies:
+
+#### spyOn - Spy on an EXISTING object
+
+```typescript
+// You have a real service instance
+const router = TestBed.inject(Router);
+
+// Spy on ONE method
+spyOn(router, 'navigate');
+
+// The spy replaces just that method
+router.navigate(['/dashboard']);
+expect(router.navigate).toHaveBeenCalledWith(['/dashboard']);
+```
+
+#### createSpyObj - Create a NEW spy object
+
+```typescript
+// No real service - create a full mock
+const routerSpy = jasmine.createSpyObj('Router', ['navigate', 'navigateByUrl']);
+
+TestBed.configureTestingModule({
+  providers: [
+    { provide: Router, useValue: routerSpy },
+  ],
+});
+```
+
+#### When to Use Each
+
+| Approach | Use When |
+|----------|----------|
+| `spyOn(obj, 'method')` | You have the real object and want to spy on specific methods |
+| `createSpyObj('Name', [...])` | You want a complete replacement for the entire service |
+
+```typescript
+// Common pattern: spyOn for Store dispatch
+store = TestBed.inject(MockStore);
+spyOn(store, 'dispatch').and.callThrough();
+// ↑ Uses real MockStore but tracks dispatch calls
+
+// Common pattern: createSpyObj for services
+const loggerSpy = jasmine.createSpyObj('LoggerService', ['debug', 'info', 'error']);
+// ↑ Full replacement, no real LoggerService involved
+```
+
+---
+
+### 6.6 Mocking in Your Auth Module
+
+Let's map every dependency in your auth module and how to mock each:
+
+#### LoginComponent Dependencies
+
+```typescript
+// LoginComponent injects:
+private fb = inject(NonNullableFormBuilder);  // ← Provided by ReactiveFormsModule
+private store = inject(Store);                // ← provideMockStore()
+private loggerService = inject(LoggerService); // ← createSpyObj
+
+// TestBed setup:
+TestBed.configureTestingModule({
+  imports: [
+    LoginComponent,
+    ReactiveFormsModule,              // Provides real FormBuilder
+  ],
+  providers: [
+    provideMockStore({ initialState }), // NgRx MockStore (a Fake!)
+    { provide: LoggerService, useValue: loggerSpy }, // Spy
+  ],
+  schemas: [NO_ERRORS_SCHEMA],          // Dummy for child components
+});
+```
+
+#### AuthEffects Dependencies
+
+```typescript
+// AuthEffects injects:
+private actions$ = inject(Actions);       // ← provideMockActions()
+private authService = inject(AuthService); // ← createSpyObj
+private loggerService = inject(LoggerService); // ← createSpyObj
+private router = inject(Router);          // ← createSpyObj
+private toast = inject(ToastService);     // ← createSpyObj
+
+// TestBed setup:
+let actions$: Observable<Action>;
+
+TestBed.configureTestingModule({
+  providers: [
+    AuthEffects,
+    provideMockActions(() => actions$),
+    { provide: AuthService, useValue: authServiceSpy },
+    { provide: LoggerService, useValue: loggerSpy },
+    { provide: Router, useValue: routerSpy },
+    { provide: ToastService, useValue: toastSpy },
+  ],
+});
+```
+
+#### AuthService Dependencies
+
+```typescript
+// AuthService injects:
+private http = inject(HttpClient); // ← provideHttpClientTesting()
+
+// TestBed setup:
+TestBed.configureTestingModule({
+  providers: [
+    AuthService,                   // Real service
+    provideHttpClient(),
+    provideHttpClientTesting(),    // HttpTestingController (a Fake!)
+  ],
+});
+```
+
+#### Mock Map Summary
+
+| Dependency | Mock Type | Method |
+|-----------|-----------|--------|
+| `HttpClient` | Fake | `provideHttpClientTesting()` |
+| `Store` | Fake | `provideMockStore()` |
+| `Actions` | Fake | `provideMockActions()` |
+| `Router` | Spy | `createSpyObj('Router', ['navigate'])` |
+| `LoggerService` | Spy | `createSpyObj('LoggerService', [...])` |
+| `ToastService` | Spy | `createSpyObj('ToastService', [...])` |
+| `AuthService` | Spy | `createSpyObj('AuthService', [...])` |
+| `FormBuilder` | Real | `ReactiveFormsModule` (no mock needed) |
+| Child components | Dummy | `NO_ERRORS_SCHEMA` |
+
+---
+
+### 6.7 Common Mocking Mistakes
+
+#### Mistake 1: Over-mocking
+
+```typescript
+// ❌ BAD - Mocking what you're testing
+const authServiceSpy = jasmine.createSpyObj('AuthService', ['login']);
+authServiceSpy.login.and.returnValue(of(mockResponse));
+
+// You're testing that login returns mockResponse...
+// which YOU just configured. This tests nothing!
+
+// ✅ GOOD - Use real service, mock its DEPENDENCIES
+TestBed.configureTestingModule({
+  providers: [
+    AuthService,           // Real service under test
+    provideHttpClient(),
+    provideHttpClientTesting(), // Mock the dependency (HTTP)
+  ],
+});
+```
+
+**Rule:** Never mock the thing you're testing.
+
+#### Mistake 2: Under-mocking
+
+```typescript
+// ❌ BAD - Using real HTTP in tests
+TestBed.configureTestingModule({
+  providers: [
+    AuthService,
+    provideHttpClient(), // This will try to hit real endpoints!
+  ],
+});
+
+// ✅ GOOD - Mock the HTTP layer
+TestBed.configureTestingModule({
+  providers: [
+    AuthService,
+    provideHttpClient(),
+    provideHttpClientTesting(), // Intercepts HTTP calls
+  ],
+});
+```
+
+**Rule:** Always mock external boundaries (HTTP, localStorage, WebSocket, etc.)
+
+#### Mistake 3: Fragile mocks
+
+```typescript
+// ❌ BAD - Mock breaks when service adds new method
+const spy = jasmine.createSpyObj('AuthService', ['login', 'logout']);
+// If AuthService adds 'register()', tests still pass but
+// any code calling register() will get undefined
+
+// ✅ BETTER - Use type checking
+const spy = jasmine.createSpyObj<AuthService>('AuthService', [
+  'login', 'logout', 'register',
+]);
+// TypeScript will warn if AuthService interface changes
+```
+
+#### Mistake 4: Not resetting spy state
+
+```typescript
+// ❌ BAD - Spy carries state between tests
+describe('MyComponent', () => {
+  const spy = jasmine.createSpyObj('Service', ['method']);
+
+  it('test 1', () => {
+    spy.method();
+    expect(spy.method).toHaveBeenCalledTimes(1); // ✓
+  });
+
+  it('test 2', () => {
+    spy.method();
+    expect(spy.method).toHaveBeenCalledTimes(1); // ✗ FAILS - count is 2!
+  });
+});
+
+// ✅ GOOD - Create spy in beforeEach
+describe('MyComponent', () => {
+  let spy: jasmine.SpyObj<Service>;
+
+  beforeEach(() => {
+    spy = jasmine.createSpyObj('Service', ['method']); // Fresh each test
+  });
+});
+```
+
+---
+
+### 6.8 Advanced: Mocking Observables
+
+Common patterns for mocking RxJS Observables:
+
+```typescript
+import { of, throwError, BehaviorSubject, EMPTY, NEVER } from 'rxjs';
+import { delay } from 'rxjs/operators';
+
+// Return success value
+spy.login.and.returnValue(of(mockResponse));
+
+// Return error
+spy.login.and.returnValue(
+  throwError(() => ({ status: 401, message: 'Unauthorized' }))
+);
+
+// Return empty (completes immediately, no value)
+spy.logout.and.returnValue(EMPTY);
+
+// Return never (never emits, never completes - simulates pending)
+spy.login.and.returnValue(NEVER);
+
+// Return delayed value (use with fakeAsync + tick)
+spy.login.and.returnValue(of(mockResponse).pipe(delay(1000)));
+
+// Dynamic behavior based on input
+spy.login.and.callFake((creds: LoginRequest) => {
+  if (creds.email === 'bad@test.com') {
+    return throwError(() => ({ status: 401 }));
+  }
+  return of(mockResponse);
+});
+
+// BehaviorSubject for stateful mocks (like Store selectors)
+const authStatus$ = new BehaviorSubject({
+  isAuthenticated: false,
+  isLoading: false,
+  error: null,
+});
+// Later in test: authStatus$.next({ ...newState });
+```
+
+---
+
+## Summary - Part 6
+
+| Topic | Key Takeaway |
+|-------|--------------|
+| Dummy | Placeholder, never used (`{} as Service`) |
+| Stub | Fixed return values, no tracking |
+| Spy | Tracks calls + configurable returns (`createSpyObj`) |
+| Mock | Spy with expectations verified after test |
+| Fake | Simplified working implementation (`MockStore`, `HttpTestingController`) |
+| `spyOn` | Spy on existing object's method |
+| `createSpyObj` | Create entirely new mock object |
+| Golden Rule | Never mock what you're testing |
+| Observable mocks | `of()`, `throwError()`, `EMPTY`, `NEVER` |
+
+---
+
+## Practice Exercise
+
+For your `AuthEffects` class, list:
+
+1. **All 5 dependencies** it injects
+2. **What type of test double** you'd use for each (spy, fake, stub?)
+3. **Write the `beforeEach` setup** mentally — what goes in `providers[]`?
+4. **For `loginSuccess$` effect** — what spy assertions would you write?
+   - Hint: verify `authService.setAccessToken()`, `toast.success()`, `router.navigate()`
+
+---
+
+**Next: Part 7 - Testing Best Practices (patterns, anti-patterns, organization)**
