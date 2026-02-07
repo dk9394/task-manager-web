@@ -1957,3 +1957,607 @@ Think about your `RegisterComponent`:
 ---
 
 **Next: Part 5 - Integration Testing (component + service, routing)**
+
+---
+
+---
+
+## Part 5: Integration Testing
+
+Integration tests verify that **multiple units work together correctly**. While unit tests isolate one thing, integration tests connect pieces and test their interaction.
+
+### 5.1 Unit vs Integration Tests
+
+```
+UNIT TEST                         INTEGRATION TEST
+──────────                        ─────────────────
+Tests ONE thing                   Tests MULTIPLE things together
+Mocks all dependencies            Uses REAL dependencies (some or all)
+Fast, isolated                    Slower, realistic
+"Does this function work?"        "Do these pieces work together?"
+```
+
+#### Visual Comparison
+
+```
+Unit Test: LoginComponent
+┌────────────────────────────┐
+│  LoginComponent            │
+│  ┌─────────┐ ┌──────────┐ │
+│  │MockStore│ │MockLogger│ │    ← Everything mocked
+│  └─────────┘ └──────────┘ │
+└────────────────────────────┘
+
+Integration Test: LoginComponent + Store + Effects
+┌─────────────────────────────────────────────┐
+│  LoginComponent                             │
+│  ┌───────────┐  ┌─────────┐  ┌───────────┐ │
+│  │ Real Store │→│ Reducer │→│  Effects  │ │    ← Real store pipeline
+│  └───────────┘  └─────────┘  └─────┬─────┘ │
+│                                    │        │
+│                              ┌─────▼─────┐  │
+│                              │ MockHTTP  │  │    ← Only HTTP mocked
+│                              └───────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+#### When to Use Each
+
+| Scenario | Test Type |
+|----------|-----------|
+| Form validation logic | Unit |
+| Service method returns correct data | Unit |
+| Component dispatches correct action | Unit |
+| Component → Store → Reducer → State → Component updates | **Integration** |
+| Service → HTTP → Response → Side effects | **Integration** |
+| Parent passes data to child, child emits back | **Integration** |
+| Route navigation triggers guard + component load | **Integration** |
+
+---
+
+### 5.2 Integration Test: Component + Real Store
+
+Instead of `provideMockStore`, use the **real** store with reducers. This tests the full NgRx cycle.
+
+#### Setup
+
+```typescript
+import { StoreModule } from '@ngrx/store';
+import { EffectsModule } from '@ngrx/effects';
+import { authReducer } from '../../store/auth.reducer';
+
+describe('LoginComponent (Integration)', () => {
+  let component: LoginComponent;
+  let fixture: ComponentFixture<LoginComponent>;
+  let store: Store;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [
+        LoginComponent,
+        ReactiveFormsModule,
+        RouterTestingModule,
+        // REAL store with REAL reducer
+        StoreModule.forRoot({}),
+        StoreModule.forFeature('auth', authReducer),
+      ],
+      providers: [
+        { provide: LoggerService, useValue: jasmine.createSpyObj('LoggerService', ['debug', 'info', 'error']) },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+
+    store = TestBed.inject(Store);
+    spyOn(store, 'dispatch').and.callThrough();
+
+    fixture = TestBed.createComponent(LoginComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+});
+```
+
+#### Why Real Store?
+
+| MockStore | Real Store |
+|-----------|------------|
+| `overrideSelector()` returns fake data | Selectors derive from actual state |
+| Dispatched actions go nowhere | Actions hit the reducer, state changes |
+| Tests component in isolation | Tests component + store pipeline |
+| Good for unit tests | Good for integration tests |
+
+#### Test: Full Dispatch → State → View Cycle
+
+```typescript
+it('should show loading state after login dispatch', () => {
+  // Arrange
+  component.form.patchValue({
+    email: 'test@example.com',
+    password: 'password123',
+  });
+
+  // Act - dispatch login (this hits the REAL reducer)
+  component.onSubmit();
+
+  // The reducer sets isLoading: true for AuthActions.login
+  // Assert - verify state changed
+  store.select(selectIsLoading).subscribe((isLoading) => {
+    expect(isLoading).toBe(true);
+  });
+});
+
+it('should show error after login failure', () => {
+  // Simulate error by dispatching failure directly
+  store.dispatch(AuthActions.loginFailure({ error: 'Invalid credentials' }));
+
+  // Assert - state reflects error
+  store.select(selectError).subscribe((error) => {
+    expect(error).toBe('Invalid credentials');
+  });
+
+  // Assert - component reflects error via authStatus$
+  component.authStatus$.subscribe((status) => {
+    expect(status.error).toBe('Invalid credentials');
+    expect(status.isLoading).toBe(false);
+  });
+});
+```
+
+---
+
+### 5.3 Integration Test: Component + Service + HTTP
+
+Test the component calling a real service, but mock only the HTTP layer.
+
+```typescript
+describe('LoginComponent + AuthService (Integration)', () => {
+  let component: LoginComponent;
+  let fixture: ComponentFixture<LoginComponent>;
+  let httpMock: HttpTestingController;
+  let store: Store;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [
+        LoginComponent,
+        ReactiveFormsModule,
+        RouterTestingModule,
+        StoreModule.forRoot({}),
+        StoreModule.forFeature('auth', authReducer),
+        EffectsModule.forRoot([]),
+        EffectsModule.forFeature([AuthEffects]),
+      ],
+      providers: [
+        AuthService,               // REAL service
+        provideHttpClient(),
+        provideHttpClientTesting(), // Mock HTTP only
+        { provide: LoggerService, useValue: jasmine.createSpyObj('LoggerService', ['debug', 'info', 'error', 'warn']) },
+        { provide: ToastService, useValue: jasmine.createSpyObj('ToastService', ['success', 'error']) },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+
+    store = TestBed.inject(Store);
+    httpMock = TestBed.inject(HttpTestingController);
+
+    fixture = TestBed.createComponent(LoginComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+});
+```
+
+#### Test: Full Login Flow
+
+```typescript
+it('should complete login flow: form → dispatch → effect → HTTP → state', () => {
+  const mockResponse = {
+    user: { id: '1', name: 'Test User', email: 'test@example.com' },
+    tokens: { accessToken: 'abc', refreshToken: 'xyz' },
+  };
+
+  // ARRANGE - fill form
+  component.form.patchValue({
+    email: 'test@example.com',
+    password: 'password123',
+  });
+
+  // ACT - submit form
+  component.onSubmit();
+
+  // Effect triggers HTTP call via AuthService
+  const req = httpMock.expectOne('/api/auth/login');
+  expect(req.request.method).toBe('POST');
+  expect(req.request.body).toEqual({
+    email: 'test@example.com',
+    password: 'password123',
+  });
+
+  // Simulate server response
+  req.flush(mockResponse);
+
+  // ASSERT - store state updated
+  store.select(selectIsAuthenticated).subscribe((isAuth) => {
+    expect(isAuth).toBe(true);
+  });
+
+  store.select(selectUser).subscribe((user) => {
+    expect(user?.email).toBe('test@example.com');
+  });
+});
+```
+
+#### What This Tests (Full Pipeline)
+
+```
+component.onSubmit()
+    │
+    ▼
+store.dispatch(AuthActions.login({ request }))
+    │
+    ▼
+AuthEffects.login$  ←── listens for AuthActions.login
+    │
+    ▼
+AuthService.login()  ←── real service makes HTTP call
+    │
+    ▼
+HttpTestingController  ←── we intercept and provide response
+    │
+    ▼
+AuthEffects dispatches AuthActions.loginSuccess
+    │
+    ▼
+authReducer  ←── updates state
+    │
+    ▼
+Selectors  ←── component reads updated state
+```
+
+---
+
+### 5.4 Testing Parent-Child Component Interaction
+
+When a parent component passes data to a child and the child emits events back.
+
+#### Scenario
+
+```
+┌─────────────────────────┐
+│  ParentComponent        │
+│                         │
+│  ┌───────────────────┐  │
+│  │  ChildComponent   │  │
+│  │  @Input() data    │  │    ← Parent passes data down
+│  │  @Output() action │  │    ← Child emits events up
+│  └───────────────────┘  │
+│                         │
+└─────────────────────────┘
+```
+
+#### Deep Test Setup (Import Real Child)
+
+```typescript
+describe('ParentComponent + ChildComponent', () => {
+  let parentComponent: ParentComponent;
+  let fixture: ComponentFixture<ParentComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [
+        ParentComponent,
+        ChildComponent,   // REAL child component (deep test)
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ParentComponent);
+    parentComponent = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  it('should pass items to child component', () => {
+    // Arrange
+    parentComponent.items = [{ id: 1, name: 'Task 1' }];
+    fixture.detectChanges();
+
+    // Assert - child received the data
+    const childDebugEl = fixture.debugElement.query(
+      By.directive(ChildComponent)
+    );
+    const childComponent = childDebugEl.componentInstance as ChildComponent;
+    expect(childComponent.data).toEqual([{ id: 1, name: 'Task 1' }]);
+  });
+
+  it('should handle child event emission', () => {
+    spyOn(parentComponent, 'onChildAction');
+
+    // Find the child component
+    const childDebugEl = fixture.debugElement.query(
+      By.directive(ChildComponent)
+    );
+    const childComponent = childDebugEl.componentInstance as ChildComponent;
+
+    // Trigger child's output
+    childComponent.action.emit({ type: 'delete', id: 1 });
+
+    // Parent should have handled it
+    expect(parentComponent.onChildAction).toHaveBeenCalledWith({
+      type: 'delete',
+      id: 1,
+    });
+  });
+});
+```
+
+#### Key Testing Utilities for Deep Tests
+
+```typescript
+import { By } from '@angular/platform-browser';
+import { DebugElement } from '@angular/core';
+```
+
+| Utility | Purpose |
+|---------|---------|
+| `fixture.debugElement` | Root debug element with query abilities |
+| `By.directive(Component)` | Find child component in template |
+| `By.css('selector')` | Find elements by CSS selector |
+| `.query()` | Returns first match (DebugElement) |
+| `.queryAll()` | Returns all matches |
+| `.componentInstance` | Get the component class from DebugElement |
+| `.nativeElement` | Get the DOM element from DebugElement |
+
+---
+
+### 5.5 Testing Routing
+
+Testing that navigation works correctly - guards, redirects, and route configuration.
+
+#### Setup with RouterTestingModule
+
+```typescript
+import { RouterTestingModule } from '@angular/router/testing';
+import { Router } from '@angular/router';
+import { Location } from '@angular/common';
+
+describe('Auth Routing', () => {
+  let router: Router;
+  let location: Location;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [
+        RouterTestingModule.withRoutes([
+          { path: '', redirectTo: 'login', pathMatch: 'full' },
+          { path: 'login', component: LoginComponent },
+          { path: 'register', component: RegisterComponent },
+          { path: 'dashboard', component: DashboardComponent },
+        ]),
+        // Component declarations/imports as needed
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+
+    router = TestBed.inject(Router);
+    location = TestBed.inject(Location);
+  });
+});
+```
+
+#### Test: Navigation
+
+```typescript
+it('should navigate to login page', fakeAsync(() => {
+  router.navigate(['/login']);
+  tick(); // Wait for navigation to complete
+  expect(location.path()).toBe('/login');
+}));
+
+it('should redirect empty path to login', fakeAsync(() => {
+  router.navigate(['']);
+  tick();
+  expect(location.path()).toBe('/login');
+}));
+```
+
+#### Test: Route Guards
+
+```typescript
+describe('AuthGuard', () => {
+  let router: Router;
+  let location: Location;
+  let store: MockStore;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [
+        RouterTestingModule.withRoutes([
+          { path: 'login', component: LoginComponent },
+          {
+            path: 'dashboard',
+            component: DashboardComponent,
+            canActivate: [authGuard],  // Functional guard
+          },
+        ]),
+      ],
+      providers: [
+        provideMockStore({
+          initialState: { auth: initialAuthState },
+        }),
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+
+    router = TestBed.inject(Router);
+    location = TestBed.inject(Location);
+    store = TestBed.inject(MockStore);
+  });
+
+  it('should allow access to dashboard when authenticated', fakeAsync(() => {
+    // Override selector to simulate authenticated user
+    store.overrideSelector(selectIsAuthenticated, true);
+    store.refreshState();
+
+    router.navigate(['/dashboard']);
+    tick();
+
+    expect(location.path()).toBe('/dashboard');
+  }));
+
+  it('should redirect to login when not authenticated', fakeAsync(() => {
+    store.overrideSelector(selectIsAuthenticated, false);
+    store.refreshState();
+
+    router.navigate(['/dashboard']);
+    tick();
+
+    expect(location.path()).toBe('/login');
+  }));
+});
+```
+
+---
+
+### 5.6 Testing HTTP Interceptors (Integration)
+
+Test that your interceptor properly modifies requests and handles responses.
+
+#### Testing Auth Interceptor
+
+```typescript
+import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+
+describe('authInterceptor (Integration)', () => {
+  let httpMock: HttpTestingController;
+  let authService: jasmine.SpyObj<AuthService>;
+  let http: HttpClient;
+
+  beforeEach(() => {
+    authService = jasmine.createSpyObj('AuthService', [
+      'getAccessToken', 'getRefreshToken', 'setAccessToken',
+    ]);
+
+    TestBed.configureTestingModule({
+      providers: [
+        provideHttpClient(
+          withInterceptors([authInterceptor])  // Register interceptor
+        ),
+        provideHttpClientTesting(),
+        { provide: AuthService, useValue: authService },
+        { provide: LoggerService, useValue: jasmine.createSpyObj('LoggerService', ['warn', 'error', 'info']) },
+      ],
+    });
+
+    http = TestBed.inject(HttpClient);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('should add Authorization header when token exists', () => {
+    authService.getAccessToken.and.returnValue('my-token');
+
+    http.get('/api/data').subscribe();
+
+    const req = httpMock.expectOne('/api/data');
+    expect(req.request.headers.get('Authorization')).toBe('Bearer my-token');
+    req.flush({});
+  });
+
+  it('should NOT add header when no token', () => {
+    authService.getAccessToken.and.returnValue(null);
+
+    http.get('/api/data').subscribe();
+
+    const req = httpMock.expectOne('/api/data');
+    expect(req.request.headers.has('Authorization')).toBe(false);
+    req.flush({});
+  });
+
+  it('should handle 401 and attempt token refresh', () => {
+    authService.getAccessToken.and.returnValue('expired-token');
+    authService.getRefreshToken.and.returnValue('refresh-token');
+
+    http.get('/api/data').subscribe();
+
+    // First request returns 401
+    const req = httpMock.expectOne('/api/data');
+    req.flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    // Interceptor should try to refresh token
+    const refreshReq = httpMock.expectOne('/api/auth/refresh');
+    expect(refreshReq.request.method).toBe('POST');
+  });
+});
+```
+
+---
+
+### 5.7 Integration Testing Checklist
+
+Before writing integration tests, ask yourself:
+
+```
+┌──────────────────────────────────────────────────┐
+│  INTEGRATION TEST DECISION CHECKLIST             │
+│                                                  │
+│  □ Does the test involve 2+ units working        │
+│    together?                                     │
+│                                                  │
+│  □ Is the interaction between units the thing    │
+│    I want to verify?                             │
+│                                                  │
+│  □ Would a unit test miss this bug?              │
+│                                                  │
+│  □ Is it worth the extra setup complexity?       │
+│                                                  │
+│  If YES to most → Write an integration test      │
+│  If NO to most → A unit test is sufficient       │
+└──────────────────────────────────────────────────┘
+```
+
+#### Integration Test Pitfalls
+
+| Pitfall | Problem | Solution |
+|---------|---------|----------|
+| Testing too much | Slow, brittle, hard to debug | Keep integration scope small |
+| Unclear failure | "Something broke somewhere" | Add focused assertions |
+| Duplicating unit tests | Redundant coverage | Integration tests = interaction, not logic |
+| Complex setup | 50 lines of setup for 3 lines of test | Extract setup into helpers |
+
+---
+
+## Summary - Part 5
+
+| Topic | Key Takeaway |
+|-------|--------------|
+| Unit vs Integration | Unit = isolated, Integration = multiple units together |
+| Component + Real Store | Use `StoreModule.forFeature` instead of `provideMockStore` |
+| Component + Service + HTTP | Real service, mock only HTTP layer |
+| Parent-Child | `By.directive()` to find child, test data flow + events |
+| Routing | `fakeAsync + tick`, test guards with MockStore |
+| Interceptors | `withInterceptors()` + HttpTestingController |
+| When to use | When the *interaction* between units is what matters |
+
+---
+
+## Practice Exercise
+
+Think about your auth module's full login flow:
+
+1. **Map the chain**: LoginComponent → Store → Effects → AuthService → HTTP → State
+2. **Identify boundaries**: Where would you mock? Where would you use real implementations?
+3. **List 3 integration tests** you'd write that unit tests would miss
+   - Hint: "Does the form submission actually trigger the HTTP call through the full NgRx pipeline?"
+   - Hint: "Does the auth guard actually prevent navigation when store says not authenticated?"
+   - Hint: "Does the interceptor actually attach the token that AuthService provides?"
+
+---
+
+**Next: Part 6 - Mocking & Test Doubles (spies, stubs, fakes, and when to use each)**
