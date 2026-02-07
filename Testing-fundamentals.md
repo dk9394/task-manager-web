@@ -3153,3 +3153,616 @@ For your `AuthEffects` class, list:
 ---
 
 **Next: Part 7 - Testing Best Practices (patterns, anti-patterns, organization)**
+
+---
+
+---
+
+## Part 7: Testing Best Practices
+
+This part covers the patterns, anti-patterns, and organizational strategies that separate good test suites from great ones. These are lessons from real-world Angular projects.
+
+### 7.1 Test Organization
+
+#### File Structure
+
+```
+feature/
+├── components/
+│   └── login/
+│       ├── login.component.ts
+│       ├── login.component.spec.ts       ← Component unit tests
+│       ├── login.component.html
+│       └── login.component.scss
+├── store/
+│   ├── auth.actions.ts
+│   ├── auth.reducer.ts
+│   ├── auth.reducer.spec.ts              ← Reducer tests (pure functions!)
+│   ├── auth.effects.ts
+│   ├── auth.effects.spec.ts              ← Effects tests
+│   ├── auth.selectors.ts
+│   └── auth.selectors.spec.ts            ← Selector tests (pure functions!)
+└── __tests__/                            ← Optional: integration tests
+    └── auth-flow.integration.spec.ts
+```
+
+**Rule:** Unit tests sit next to the file they test. Integration tests can go in a `__tests__` folder.
+
+#### Describe Block Organization
+
+Structure your test file to mirror the component/service API:
+
+```typescript
+describe('LoginComponent', () => {
+
+  // ──── Setup ────
+  beforeEach(async () => { /* ... */ });
+
+  // ──── Creation ────
+  it('should create', () => { });
+
+  // ──── Initialization ────
+  describe('initialization', () => {
+    it('should create form on init', () => { });
+    it('should initialize with empty values', () => { });
+    it('should log form init', () => { });
+  });
+
+  // ──── Group by feature/method ────
+  describe('form validation', () => {
+    describe('email', () => {
+      it('should be invalid when empty', () => { });
+      it('should be invalid with bad format', () => { });
+      it('should be valid with correct email', () => { });
+    });
+
+    describe('password', () => {
+      it('should be invalid when empty', () => { });
+      it('should be invalid when too short', () => { });
+      it('should be valid with 6+ characters', () => { });
+    });
+  });
+
+  // ──── Actions/Methods ────
+  describe('onSubmit()', () => {
+    it('should dispatch login when valid', () => { });
+    it('should NOT dispatch when invalid', () => { });
+    it('should mark fields touched when invalid', () => { });
+  });
+
+  // ──── Store interaction ────
+  describe('store state', () => {
+    it('should reflect loading state', () => { });
+    it('should reflect error state', () => { });
+  });
+});
+```
+
+---
+
+### 7.2 The FIRST Principles
+
+Good tests follow the FIRST acronym:
+
+```
+F - Fast        → Tests run quickly (milliseconds, not seconds)
+I - Independent → Tests don't depend on each other
+R - Repeatable  → Same result every time, anywhere
+S - Self-validating → Pass or fail, no manual inspection
+T - Timely      → Written close to the code they test
+```
+
+#### F - Fast
+
+```typescript
+// ❌ SLOW - Using real HTTP, real delays
+it('should timeout after 5 seconds', async () => {
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  expect(component.timedOut).toBe(true);
+});
+
+// ✅ FAST - Use fakeAsync to skip time
+it('should timeout after 5 seconds', fakeAsync(() => {
+  tick(5000);  // Instant!
+  expect(component.timedOut).toBe(true);
+}));
+```
+
+#### I - Independent
+
+```typescript
+// ❌ BAD - Test 2 depends on test 1 running first
+it('should login', () => {
+  service.login(credentials);  // Sets internal state
+});
+
+it('should have token after login', () => {
+  expect(service.getToken()).toBeTruthy(); // Depends on test above!
+});
+
+// ✅ GOOD - Each test sets up its own state
+it('should have token after login', () => {
+  service.login(credentials);  // Arrange
+  const req = httpMock.expectOne('/login');
+  req.flush(mockResponse);
+
+  expect(service.getToken()).toBeTruthy();  // Self-contained
+});
+```
+
+#### R - Repeatable
+
+```typescript
+// ❌ BAD - Depends on current time
+it('should show greeting', () => {
+  expect(component.greeting).toBe('Good morning'); // Fails after noon!
+});
+
+// ✅ GOOD - Control the time
+it('should show morning greeting before noon', () => {
+  jasmine.clock().install();
+  jasmine.clock().mockDate(new Date(2024, 0, 1, 9, 0)); // 9 AM
+  expect(component.greeting).toBe('Good morning');
+  jasmine.clock().uninstall();
+});
+```
+
+#### S - Self-Validating
+
+```typescript
+// ❌ BAD - Requires manual inspection
+it('should log user data', () => {
+  console.log(component.userData); // "Check the console output"
+});
+
+// ✅ GOOD - Automated assertion
+it('should set user data', () => {
+  expect(component.userData).toEqual({ name: 'John', email: 'john@test.com' });
+});
+```
+
+---
+
+### 7.3 What to Test (and What NOT to Test)
+
+#### DO Test
+
+| What | Why | Example |
+|------|-----|---------|
+| Public methods | They define the component's contract | `onSubmit()`, `login()` |
+| Conditional logic | Branches can hide bugs | `if (form.valid)` paths |
+| Error handling | Failures must be graceful | 401, 500, network errors |
+| Edge cases | Boundaries cause bugs | Empty strings, null, 0, max length |
+| State transitions | State machines need coverage | loading → success → idle |
+| Validators | Form correctness depends on them | required, email, minLength |
+| Selectors | They derive critical state | `selectAuthStatus` |
+| Reducers | They manage state transitions | login → isLoading: true |
+
+#### DO NOT Test
+
+| What | Why |
+|------|-----|
+| Private methods | Test them through public methods |
+| Framework code | Angular's `ngOnInit`, `ngOnDestroy` work correctly |
+| Third-party libraries | PrimeNG, NgRx are already tested |
+| Simple getters/setters | Unless they have logic |
+| HTML structure details | Brittle — breaks on every template change |
+| Implementation details | Test behavior, not how it's coded |
+
+```typescript
+// ❌ Testing implementation details
+it('should call initializeForm in ngOnInit', () => {
+  spyOn(component as any, 'initializeForm');
+  component.ngOnInit();
+  expect((component as any).initializeForm).toHaveBeenCalled();
+});
+// This tests HOW it works, not WHAT it does
+
+// ✅ Testing behavior
+it('should have a form after initialization', () => {
+  // ngOnInit already ran via fixture.detectChanges()
+  expect(component.form).toBeDefined();
+  expect(component.form.contains('email')).toBe(true);
+});
+// This tests WHAT the user gets
+```
+
+---
+
+### 7.4 Anti-Patterns to Avoid
+
+#### Anti-Pattern 1: The Giant Test
+
+```typescript
+// ❌ BAD - Tests everything in one test
+it('should handle the entire login flow', () => {
+  // 50 lines of setup
+  // 20 lines of actions
+  // 30 lines of assertions
+  // If it fails... which part broke?
+});
+
+// ✅ GOOD - Small, focused tests
+describe('login flow', () => {
+  it('should dispatch login action on submit', () => { /* 5-10 lines */ });
+  it('should show loading during request', () => { /* 5-10 lines */ });
+  it('should navigate on success', () => { /* 5-10 lines */ });
+  it('should show error on failure', () => { /* 5-10 lines */ });
+});
+```
+
+#### Anti-Pattern 2: Testing Private Methods
+
+```typescript
+// ❌ BAD - Accessing private method
+it('should validate email format', () => {
+  const result = (component as any).validateEmail('bad-email');
+  expect(result).toBe(false);
+});
+
+// ✅ GOOD - Test through the public interface
+it('should show email error for bad format', () => {
+  component.emailControl.setValue('bad-email');
+  expect(component.emailControl.hasError('email')).toBe(true);
+});
+```
+
+#### Anti-Pattern 3: The Assertion-Free Test
+
+```typescript
+// ❌ BAD - No assertions! Always passes
+it('should handle login', () => {
+  component.form.patchValue({
+    email: 'test@test.com',
+    password: 'password',
+  });
+  component.onSubmit();
+  // No expect()... this always "passes"
+});
+
+// ✅ GOOD - Clear assertions
+it('should dispatch login on valid submit', () => {
+  component.form.patchValue({
+    email: 'test@test.com',
+    password: 'password',
+  });
+  component.onSubmit();
+  expect(store.dispatch).toHaveBeenCalledWith(
+    AuthActions.login({ request: { email: 'test@test.com', password: 'password' } })
+  );
+});
+```
+
+#### Anti-Pattern 4: Excessive Setup
+
+```typescript
+// ❌ BAD - 60 lines of setup for every test
+beforeEach(async () => {
+  // ... 60 lines creating mocks, configuring module, etc.
+});
+
+// ✅ GOOD - Extract helper functions
+function createComponent(overrides?: Partial<ComponentConfig>) {
+  // Standard setup with configurable overrides
+}
+
+function fillLoginForm(email = 'test@test.com', password = 'password') {
+  component.form.patchValue({ email, password });
+}
+
+// Tests become clean:
+it('should dispatch login', () => {
+  fillLoginForm();
+  component.onSubmit();
+  expect(store.dispatch).toHaveBeenCalled();
+});
+```
+
+#### Anti-Pattern 5: Tightly Coupled to DOM
+
+```typescript
+// ❌ BAD - Breaks if CSS class changes
+it('should show error', () => {
+  const el = fixture.nativeElement.querySelector('.auth-form__error-message--visible.text-danger.mt-2');
+  expect(el).toBeTruthy();
+});
+
+// ✅ GOOD - Use data-testid or semantic queries
+it('should show error', () => {
+  const el = fixture.nativeElement.querySelector('[data-testid="login-error"]');
+  expect(el).toBeTruthy();
+});
+
+// ✅ ALSO GOOD - Test the logic, not the DOM
+it('should have error in state', () => {
+  store.overrideSelector(selectAuthStatus, {
+    isAuthenticated: false,
+    isLoading: false,
+    error: 'Invalid credentials',
+  });
+  store.refreshState();
+
+  component.authStatus$.subscribe((status) => {
+    expect(status.error).toBe('Invalid credentials');
+  });
+});
+```
+
+---
+
+### 7.5 Test Data Management
+
+#### Use Factory Functions
+
+```typescript
+// ❌ BAD - Duplicated test data everywhere
+it('test 1', () => {
+  const user = { id: '1', name: 'Test User', email: 'test@test.com' };
+  // ...
+});
+
+it('test 2', () => {
+  const user = { id: '1', name: 'Test User', email: 'test@test.com' };
+  // ...
+});
+
+// ✅ GOOD - Factory functions
+function createMockUser(overrides?: Partial<User>): User {
+  return {
+    id: '1',
+    name: 'Test User',
+    email: 'test@test.com',
+    ...overrides,
+  };
+}
+
+function createMockAuthResponse(overrides?: Partial<AuthResponse>): AuthResponse {
+  return {
+    user: createMockUser(),
+    tokens: {
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
+    },
+    ...overrides,
+  };
+}
+
+// Usage - clean and DRY
+it('should store user on login success', () => {
+  const response = createMockAuthResponse();
+  // ...
+});
+
+it('should handle admin user', () => {
+  const response = createMockAuthResponse({
+    user: createMockUser({ name: 'Admin', email: 'admin@test.com' }),
+  });
+  // ...
+});
+```
+
+#### Where to Put Test Helpers
+
+```
+src/
+├── app/
+│   └── testing/                     ← Shared test utilities
+│       ├── mock-factories.ts        ← createMockUser(), createMockAuthResponse()
+│       ├── test-helpers.ts          ← fillForm(), createComponentFixture()
+│       └── mock-providers.ts        ← Reusable provider arrays
+```
+
+```typescript
+// testing/mock-providers.ts
+export const AUTH_MOCK_PROVIDERS = [
+  provideMockStore({ initialState: { auth: initialAuthState } }),
+  { provide: LoggerService, useValue: jasmine.createSpyObj('LoggerService', ['debug', 'info', 'error', 'warn']) },
+];
+
+// In spec files:
+import { AUTH_MOCK_PROVIDERS } from '../../../../testing/mock-providers';
+
+beforeEach(async () => {
+  await TestBed.configureTestingModule({
+    imports: [LoginComponent, ReactiveFormsModule],
+    providers: [...AUTH_MOCK_PROVIDERS],
+    schemas: [NO_ERRORS_SCHEMA],
+  }).compileComponents();
+});
+```
+
+---
+
+### 7.6 Code Coverage Guidelines
+
+#### Running Coverage
+
+```bash
+ng test --code-coverage --watch=false
+```
+
+This generates a `coverage/` folder with an HTML report.
+
+#### Coverage Metrics
+
+| Metric | What It Measures |
+|--------|-----------------|
+| **Statements** | % of code statements executed |
+| **Branches** | % of if/else/switch branches taken |
+| **Functions** | % of functions called |
+| **Lines** | % of lines executed |
+
+#### Healthy Coverage Targets
+
+```
+┌─────────────────────────────────────────────┐
+│  Coverage Targets                            │
+│                                              │
+│  Services:     80-90%   (business logic)     │
+│  Components:   70-80%   (logic, not DOM)     │
+│  Reducers:     95-100%  (pure functions!)    │
+│  Selectors:    95-100%  (pure functions!)    │
+│  Guards:       90-100%  (critical paths)     │
+│  Interceptors: 80-90%   (network layer)      │
+│  Validators:   95-100%  (pure functions!)    │
+│                                              │
+│  Overall Goal: 75-85%                        │
+└─────────────────────────────────────────────┘
+```
+
+#### Coverage ≠ Quality
+
+```typescript
+// 100% coverage but TERRIBLE test:
+it('should run all code paths', () => {
+  component.form.patchValue({ email: 'a@b.com', password: '123456' });
+  component.onSubmit();
+  component.form.patchValue({ email: '', password: '' });
+  component.onSubmit();
+  // No assertions! 100% coverage, 0% confidence.
+});
+
+// 60% coverage but VALUABLE test:
+it('should dispatch login with correct payload', () => {
+  component.form.patchValue({ email: 'test@example.com', password: 'pass123' });
+  component.onSubmit();
+  expect(store.dispatch).toHaveBeenCalledWith(
+    AuthActions.login({ request: { email: 'test@example.com', password: 'pass123' } })
+  );
+});
+```
+
+**Rule:** Aim for meaningful coverage. 80% with good assertions > 100% with no assertions.
+
+---
+
+### 7.7 Testing Checklist for Each Feature
+
+When you build a new feature, use this checklist:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  FEATURE TESTING CHECKLIST                           │
+│                                                      │
+│  Services:                                           │
+│  □ Happy path (success scenario)                     │
+│  □ Error handling (HTTP errors, validation errors)   │
+│  □ Edge cases (null, empty, boundary values)         │
+│  □ HTTP method + URL + body verified                 │
+│                                                      │
+│  Components:                                         │
+│  □ Component creates successfully                    │
+│  □ Form initializes with correct defaults            │
+│  □ Each validator works (required, format, length)   │
+│  □ Form submission dispatches correct action          │
+│  □ Invalid submission is handled                     │
+│  □ Store state reflected in component                │
+│                                                      │
+│  NgRx:                                               │
+│  □ Reducers handle each action correctly             │
+│  □ Selectors derive correct state                    │
+│  □ Effects trigger correct side effects              │
+│  □ Effects handle errors gracefully                  │
+│                                                      │
+│  Guards:                                             │
+│  □ Allows access when authorized                     │
+│  □ Redirects when unauthorized                       │
+│                                                      │
+│  Interceptors:                                       │
+│  □ Modifies request correctly (headers, tokens)      │
+│  □ Handles error responses (401, 500)                │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+### 7.8 Debugging Failing Tests
+
+When a test fails, follow this process:
+
+#### Step 1: Read the Error Message
+
+```
+FAILED: LoginComponent > onSubmit() > should dispatch login action
+  Expected spy dispatch to have been called with:
+    [ Object({ type: '[Auth] Login', request: Object({ email: 'test@test.com', password: 'pass' }) }) ]
+  but actual calls were:
+    [ ]
+
+// Translation: dispatch was never called → form might be invalid
+```
+
+#### Step 2: Common Causes & Fixes
+
+| Error | Likely Cause | Fix |
+|-------|-------------|-----|
+| `dispatch not called` | Form is invalid | Ensure `patchValue` makes form valid |
+| `Expected undefined to be truthy` | Component not created | Check TestBed imports/providers |
+| `No provider for X` | Missing dependency in TestBed | Add provider or mock |
+| `Can't bind to 'formGroup'` | Missing ReactiveFormsModule | Add to imports |
+| `Template parse errors` | Unknown child elements | Add `NO_ERRORS_SCHEMA` |
+| `Expected spy to have been called with... but received...` | Wrong arguments | Log actual args: `spy.calls.allArgs()` |
+| `Error during cleanup of component` | Unsubscribed observables | Add `afterEach` cleanup |
+
+#### Step 3: Debugging Techniques
+
+```typescript
+// Temporarily log values
+it('debug test', () => {
+  console.log('Form valid?', component.form.valid);
+  console.log('Form errors:', component.form.errors);
+  console.log('Email errors:', component.emailControl.errors);
+  console.log('Dispatch calls:', (store.dispatch as jasmine.Spy).calls.allArgs());
+});
+
+// Use fdescribe / fit to run only one test
+fdescribe('LoginComponent', () => {  // Only this suite runs
+  fit('should dispatch', () => {     // Only this test runs
+    // ...
+  });
+});
+
+// Use xdescribe / xit to SKIP tests
+xdescribe('Broken suite', () => {  // Skipped
+  xit('broken test', () => {       // Skipped
+    // ...
+  });
+});
+```
+
+| Prefix | Effect |
+|--------|--------|
+| `fdescribe` / `fit` | **Focus** — run ONLY this suite/test |
+| `xdescribe` / `xit` | **Exclude** — skip this suite/test |
+| `describe` / `it` | Normal — runs as part of full suite |
+
+**Important:** Never commit `fdescribe` or `fit` to version control! They skip all other tests.
+
+---
+
+## Summary - Part 7
+
+| Topic | Key Takeaway |
+|-------|--------------|
+| Organization | Group by feature/method, tests next to source |
+| FIRST | Fast, Independent, Repeatable, Self-validating, Timely |
+| What to test | Public methods, logic, errors, edges — NOT private/framework |
+| Anti-patterns | No giant tests, no assertion-free tests, no DOM coupling |
+| Test data | Factory functions, shared helpers |
+| Coverage | 75-85% target, quality over quantity |
+| Debugging | Read errors, `fdescribe/fit`, log spy calls |
+
+---
+
+## Practice Exercise
+
+Review your `LoginComponent` mentally:
+
+1. **List 3 anti-patterns** you might accidentally introduce
+2. **Create a factory function** for `createMockLoginCredentials()` and `createMockAuthResponse()`
+3. **Using the testing checklist**, count how many tests LoginComponent needs
+   (Hint: creation + form init + email validation + password validation + submit valid + submit invalid + store state = ~15-20 tests)
+
+---
+
+**Next: Part 8 - Hands-On Practice (writing real tests for your Auth module)**
