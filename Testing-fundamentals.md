@@ -1526,4 +1526,434 @@ Questions to answer:
 
 ---
 
-**Next: Part 4 - Component Testing (forms, DOM, NgRx)**
+---
+
+## Part 4: Component Testing
+
+Component testing is more complex than service testing because components have:
+- A TypeScript class (logic)
+- An HTML template (view)
+- Dependencies (services, store)
+- Lifecycle hooks (ngOnInit)
+- Child components (ui-input, ui-button)
+
+### 4.1 Component Testing Strategies
+
+Two main strategies:
+
+```
+SHALLOW TESTING                    DEEP TESTING
+─────────────                      ────────────
+Test component in isolation        Test with child components
+Ignore child components            Import child components
+NO_ERRORS_SCHEMA                   No schema needed
+Fast, focused                      Slower, thorough
+```
+
+| Strategy | When to Use | Schema |
+|----------|-------------|--------|
+| **Shallow** | Testing component logic (most cases) | `NO_ERRORS_SCHEMA` |
+| **Deep** | Testing parent-child interaction | Import children |
+
+**Recommendation:** Start with shallow testing. Add deep tests only when needed.
+
+---
+
+### 4.2 Setting Up Component Tests
+
+Using your actual `LoginComponent` as the example:
+
+```typescript
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ReactiveFormsModule } from '@angular/forms';
+import { RouterTestingModule } from '@angular/router/testing';
+import { MockStore, provideMockStore } from '@ngrx/store/testing';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+
+import { LoginComponent } from './login.component';
+import { AuthActions } from '../../store/auth.actions';
+import { initialAuthState } from '../../../../models/auth/auth-state.model';
+import { LoggerService } from '../../../../core/services/logger.service';
+
+describe('LoginComponent', () => {
+  let component: LoginComponent;
+  let fixture: ComponentFixture<LoginComponent>;
+  let store: MockStore;
+  let loggerSpy: jasmine.SpyObj<LoggerService>;
+
+  const initialState = { auth: initialAuthState };
+
+  beforeEach(async () => {
+    loggerSpy = jasmine.createSpyObj('LoggerService', [
+      'debug', 'info', 'error',
+    ]);
+
+    await TestBed.configureTestingModule({
+      imports: [LoginComponent, ReactiveFormsModule, RouterTestingModule],
+      providers: [
+        provideMockStore({ initialState }),
+        { provide: LoggerService, useValue: loggerSpy },
+      ],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+
+    store = TestBed.inject(MockStore);
+    spyOn(store, 'dispatch').and.callThrough();
+
+    fixture = TestBed.createComponent(LoginComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges(); // Triggers ngOnInit
+  });
+
+  // Tests go here...
+});
+```
+
+#### Breakdown of Setup
+
+| Line | Purpose |
+|------|---------|
+| `imports: [LoginComponent]` | The component being tested (standalone) |
+| `ReactiveFormsModule` | Required for reactive forms |
+| `RouterTestingModule` | Mock router (for routerLink in template) |
+| `provideMockStore` | Provides a mock NgRx store |
+| `LoggerService` spy | Mock the logger dependency |
+| `NO_ERRORS_SCHEMA` | Ignore `<ui-input>`, `<ui-button>` etc. |
+| `spyOn(store, 'dispatch')` | Track store dispatches |
+| `fixture.detectChanges()` | Triggers `ngOnInit()` → `initializeForm()` |
+
+---
+
+### 4.3 Testing Component Class (Logic)
+
+Test the TypeScript class directly through `component`:
+
+#### Test: Component Created
+
+```typescript
+it('should create', () => {
+  expect(component).toBeTruthy();
+});
+```
+
+#### Test: Form Initialization
+
+```typescript
+describe('Form initialization', () => {
+  it('should create form on init', () => {
+    expect(component.form).toBeDefined();
+  });
+
+  it('should have email and password controls', () => {
+    expect(component.form.contains('email')).toBe(true);
+    expect(component.form.contains('password')).toBe(true);
+  });
+
+  it('should initialize with empty values', () => {
+    expect(component.emailControl.value).toBe('');
+    expect(component.passwordControl.value).toBe('');
+  });
+
+  it('should log form initialization', () => {
+    expect(loggerSpy.debug).toHaveBeenCalledWith(
+      'Form initialized',
+      'LoginComponent'
+    );
+  });
+});
+```
+
+#### Test: Control Getters
+
+```typescript
+describe('Control getters', () => {
+  it('should return email control via getter', () => {
+    expect(component.emailControl).toBe(component.form.controls.email);
+  });
+
+  it('should return password control via getter', () => {
+    expect(component.passwordControl).toBe(component.form.controls.password);
+  });
+});
+```
+
+---
+
+### 4.4 Testing Form Validation
+
+Test validators by setting values and checking errors:
+
+```typescript
+describe('Form validation', () => {
+
+  describe('email field', () => {
+    it('should be invalid when empty', () => {
+      component.emailControl.setValue('');
+      expect(component.emailControl.hasError('required')).toBe(true);
+    });
+
+    it('should be invalid with bad email format', () => {
+      component.emailControl.setValue('not-an-email');
+      expect(component.emailControl.hasError('email')).toBe(true);
+    });
+
+    it('should be valid with correct email', () => {
+      component.emailControl.setValue('test@example.com');
+      expect(component.emailControl.valid).toBe(true);
+    });
+  });
+
+  describe('password field', () => {
+    it('should be invalid when empty', () => {
+      component.passwordControl.setValue('');
+      expect(component.passwordControl.hasError('required')).toBe(true);
+    });
+
+    it('should be invalid when less than 6 characters', () => {
+      component.passwordControl.setValue('12345');
+      expect(component.passwordControl.hasError('minlength')).toBe(true);
+    });
+
+    it('should be valid with 6+ characters', () => {
+      component.passwordControl.setValue('123456');
+      expect(component.passwordControl.valid).toBe(true);
+    });
+  });
+
+  describe('form level', () => {
+    it('should be invalid when both fields empty', () => {
+      expect(component.form.valid).toBe(false);
+    });
+
+    it('should be valid when both fields correct', () => {
+      component.form.patchValue({
+        email: 'test@example.com',
+        password: 'password123',
+      });
+      expect(component.form.valid).toBe(true);
+    });
+  });
+});
+```
+
+#### Key Methods for Form Testing
+
+| Method | Purpose |
+|--------|---------|
+| `control.setValue('value')` | Set single control value |
+| `form.patchValue({...})` | Set multiple values at once |
+| `control.hasError('required')` | Check specific validator error |
+| `control.errors` | Get all errors object |
+| `control.valid` / `form.valid` | Check validity |
+| `control.markAsTouched()` | Simulate user blur |
+
+---
+
+### 4.5 Testing Form Submission
+
+```typescript
+describe('onSubmit()', () => {
+  it('should dispatch login action when form is valid', () => {
+    // Arrange
+    component.form.patchValue({
+      email: 'test@example.com',
+      password: 'password123',
+    });
+
+    // Act
+    component.onSubmit();
+
+    // Assert
+    expect(store.dispatch).toHaveBeenCalledWith(
+      AuthActions.login({
+        request: { email: 'test@example.com', password: 'password123' },
+      })
+    );
+  });
+
+  it('should NOT dispatch when form is invalid', () => {
+    component.form.patchValue({ email: '', password: '' });
+    component.onSubmit();
+    expect(store.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('should mark all fields as touched when invalid', () => {
+    spyOn(component.form, 'markAllAsTouched');
+    component.onSubmit();
+    expect(component.form.markAllAsTouched).toHaveBeenCalled();
+  });
+});
+```
+
+---
+
+### 4.6 Testing Template (DOM)
+
+Access DOM through `fixture.nativeElement`:
+
+```typescript
+describe('Template', () => {
+  it('should have a form element', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const form = compiled.querySelector('form');
+    expect(form).toBeTruthy();
+  });
+
+  it('should render email input component', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const emailInput = compiled.querySelector('app-ui-input');
+    expect(emailInput).toBeTruthy();
+  });
+
+  it('should render submit button', () => {
+    const compiled = fixture.nativeElement as HTMLElement;
+    const button = compiled.querySelector('app-ui-button');
+    expect(button).toBeTruthy();
+  });
+});
+```
+
+**Note:** With `NO_ERRORS_SCHEMA`, custom elements exist in DOM but aren't rendered. Focus on class logic for shallow tests.
+
+---
+
+### 4.7 Testing with NgRx MockStore
+
+#### Providing Initial State
+
+```typescript
+provideMockStore({
+  initialState: {
+    auth: initialAuthState,
+  },
+})
+```
+
+#### Overriding Selectors
+
+```typescript
+import { selectAuthStatus } from '../../store/auth.selectors';
+
+it('should reflect loading state from store', () => {
+  // Override what the selector returns
+  store.overrideSelector(selectAuthStatus, {
+    isAuthenticated: false,
+    isLoading: true,
+    error: null,
+  });
+  store.refreshState(); // Trigger emission
+
+  component.authStatus$.subscribe((status) => {
+    expect(status.isLoading).toBe(true);
+  });
+});
+
+it('should reflect error state from store', () => {
+  store.overrideSelector(selectAuthStatus, {
+    isAuthenticated: false,
+    isLoading: false,
+    error: 'Invalid credentials',
+  });
+  store.refreshState();
+
+  component.authStatus$.subscribe((status) => {
+    expect(status.error).toBe('Invalid credentials');
+  });
+});
+```
+
+#### MockStore Key Methods
+
+| Method | Purpose |
+|--------|---------|
+| `provideMockStore({ initialState })` | Create mock store |
+| `store.overrideSelector(selector, value)` | Mock selector return |
+| `store.refreshState()` | Trigger state emission |
+| `spyOn(store, 'dispatch')` | Track dispatched actions |
+| `store.setState(newState)` | Set entire state |
+
+---
+
+### 4.8 Testing @Input and @Output
+
+For wrapper components like your `UiInputComponent`:
+
+#### Testing @Input
+
+```typescript
+describe('UiInputComponent', () => {
+  let component: UiInputComponent;
+  let fixture: ComponentFixture<UiInputComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [UiInputComponent],
+      schemas: [NO_ERRORS_SCHEMA],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(UiInputComponent);
+    component = fixture.componentInstance;
+  });
+
+  it('should accept control input', () => {
+    component.control = new FormControl('test');
+    fixture.detectChanges();
+    expect(component.control.value).toBe('test');
+  });
+
+  it('should have default type as text', () => {
+    expect(component.type).toBe('text');
+  });
+
+  it('should accept custom label', () => {
+    component.label = 'Email Address';
+    fixture.detectChanges();
+    expect(component.label).toBe('Email Address');
+  });
+});
+```
+
+#### Testing @Output
+
+```typescript
+// For a component with: @Output() onClick = new EventEmitter<Event>();
+
+it('should emit click event', () => {
+  spyOn(component.onClick, 'emit');
+
+  // Trigger the click
+  component.onClick.emit(new Event('click'));
+
+  expect(component.onClick.emit).toHaveBeenCalled();
+});
+```
+
+---
+
+## Summary - Part 4
+
+| Topic | Key Takeaway |
+|-------|--------------|
+| Shallow vs Deep | Start shallow (NO_ERRORS_SCHEMA), go deep when needed |
+| Setup | TestBed + MockStore + spy dependencies |
+| Form Testing | `setValue()`, `patchValue()`, `hasError()` |
+| Submit Testing | Verify `store.dispatch` with correct action |
+| DOM Testing | `fixture.nativeElement.querySelector()` |
+| MockStore | `overrideSelector()` + `refreshState()` |
+| @Input/@Output | Set inputs directly, spy on output emitters |
+
+---
+
+## Practice Exercise
+
+Think about your `RegisterComponent`:
+
+1. How many `describe` blocks would you need?
+   (Hint: form init, name validation, email validation, password strength, password match, submit)
+2. How would you test `passwordMatchValidator` through the component?
+   (Hint: patchValue both passwords, call `form.updateValueAndValidity()`)
+3. What extra setup does RegisterComponent need vs LoginComponent?
+
+---
+
+**Next: Part 5 - Integration Testing (component + service, routing)**

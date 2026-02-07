@@ -1,5 +1,5 @@
 <div class="flex items-center justify-between p-4">
-  <h1>Welcome to the dashboard</h1>
+  <h1>Welcome {{ currentUser()?.name }}</h1>
   <ui-button
     type="button"
     label="Logout"
