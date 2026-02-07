@@ -3773,145 +3773,292 @@ Review your `LoginComponent` mentally:
 
 ## Part 8: Hands-On Practice — Testing Your Auth Module
 
-This is the practical part. We'll set up the centralized mock system, then write real spec files for your auth module using everything from Parts 1-7.
+This is the practical part. We'll write real spec files for your auth module using standard `jasmine.createSpyObj` and everything from Parts 1-7. No custom abstractions — just the patterns Angular developers use every day.
 
-### 8.1 Step 1: Create the Mock Utility
+### 8.1 Spec File 1: Auth Reducer (Pure Function Tests)
 
-Create the generic `createMock` utility that works with any service.
+**File:** `src/app/features/auth/store/auth.reducer.spec.ts`
 
-**File:** `src/app/testing/create-mock.ts`
-
-```typescript
-/**
- * Generic mock factory — auto-discovers methods from a service class prototype
- * and creates a typed Jasmine SpyObj.
- *
- * Usage:
- *   const spy = createMock(AuthService);
- *   spy.getAccessToken.and.returnValue('token');
- */
-
-type MockConfig<T> = {
-  defaults?: Partial<Record<keyof T, any>>;
-  methods?: string[];
-};
-
-export function createMock<T>(
-  serviceClass: new (...args: any[]) => T,
-  config?: MockConfig<T>,
-): jasmine.SpyObj<T> {
-  const protoMethods = Object.getOwnPropertyNames(serviceClass.prototype)
-    .filter((name) => name !== 'constructor');
-
-  const allMethods = [...new Set([...protoMethods, ...(config?.methods ?? [])])];
-
-  const spy = jasmine.createSpyObj<T>(serviceClass.name, allMethods as any[]);
-
-  if (config?.defaults) {
-    for (const [method, value] of Object.entries(config.defaults)) {
-      if ((spy as any)[method]?.and) {
-        (spy as any)[method].and.returnValue(value);
-      }
-    }
-  }
-
-  return spy;
-}
-```
-
----
-
-### 8.2 Step 2: Create Mock Data Factories
-
-These provide consistent test data across all spec files.
-
-**File:** `src/app/testing/mock-data/auth.mock-data.ts`
+Start here — reducers are pure functions. No TestBed, no mocks. Easiest tests to write.
 
 ```typescript
-import { User } from '../../models/auth/user.model';
+import { authReducer } from './auth.reducer';
+import { AuthActions } from './auth.actions';
 import {
-  AuthResponse,
-  AuthTokens,
-  LoginRequest,
-  RegisterRequest,
-} from '../../models/auth/auth.model';
+  AuthState,
+  initialAuthState,
+} from '../../../models/auth/auth-state.model';
 
-// ──── User ────
-export function createMockUser(overrides?: Partial<User>): User {
-  return {
+describe('authReducer', () => {
+  // ──── Reusable test data ────
+  const mockUser = {
     id: '1',
     name: 'Test User',
     email: 'test@example.com',
-    avatar: null,
-    theme: 'light',
-    createdAt: '2024-01-01T00:00:00.000Z',
-    updatedAt: '2024-01-01T00:00:00.000Z',
-    ...overrides,
   };
-}
 
-// ──── Tokens ────
-export function createMockTokens(overrides?: Partial<AuthTokens>): AuthTokens {
-  return {
-    accessToken: 'mock-access-token-xyz',
-    refreshToken: 'mock-refresh-token-abc',
-    ...overrides,
+  const mockTokens = {
+    accessToken: 'mock-access-token',
+    refreshToken: 'mock-refresh-token',
   };
-}
 
-// ──── Auth Response (login/register result) ────
-export function createMockAuthResponse(overrides?: Partial<AuthResponse>): AuthResponse {
-  return {
-    user: createMockUser(),
-    tokens: createMockTokens(),
-    ...overrides,
+  const mockAuthResponse = {
+    user: mockUser,
+    tokens: mockTokens,
   };
-}
 
-// ──── Login Request ────
-export function createMockLoginRequest(overrides?: Partial<LoginRequest>): LoginRequest {
-  return {
-    email: 'test@example.com',
-    password: 'Password123',
-    ...overrides,
+  const authenticatedState: AuthState = {
+    user: mockUser,
+    accessToken: 'token',
+    refreshToken: 'refresh',
+    isAuthenticated: true,
+    isLoading: false,
+    error: null,
   };
-}
 
-// ──── Register Request ────
-export function createMockRegisterRequest(overrides?: Partial<RegisterRequest>): RegisterRequest {
-  return {
+  // ──── Initial State ────
+  it('should return initial state for unknown action', () => {
+    const action = { type: 'UNKNOWN' };
+    const state = authReducer(initialAuthState, action);
+    expect(state).toEqual(initialAuthState);
+  });
+
+  // ──── Login ────
+  describe('Login', () => {
+    it('should set isLoading true and clear error on login', () => {
+      const action = AuthActions.login({
+        request: { email: 'test@example.com', password: 'Password123' },
+      });
+      const state = authReducer(initialAuthState, action);
+
+      expect(state.isLoading).toBe(true);
+      expect(state.error).toBeNull();
+    });
+
+    it('should set user, tokens, isAuthenticated on loginSuccess', () => {
+      const action = AuthActions.loginSuccess({ response: mockAuthResponse });
+      const state = authReducer(initialAuthState, action);
+
+      expect(state.user).toEqual(mockUser);
+      expect(state.accessToken).toBe('mock-access-token');
+      expect(state.refreshToken).toBe('mock-refresh-token');
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.isLoading).toBe(false);
+      expect(state.error).toBeNull();
+    });
+
+    it('should set error and stop loading on loginFailure', () => {
+      const action = AuthActions.loginFailure({ error: 'Invalid credentials' });
+      const state = authReducer(
+        { ...initialAuthState, isLoading: true },
+        action,
+      );
+
+      expect(state.error).toBe('Invalid credentials');
+      expect(state.isLoading).toBe(false);
+    });
+  });
+
+  // ──── Register ────
+  describe('Register', () => {
+    it('should set isLoading true on register', () => {
+      const action = AuthActions.register({
+        request: { name: 'Test', email: 'a@b.com', password: 'Pass123' },
+      });
+      const state = authReducer(initialAuthState, action);
+
+      expect(state.isLoading).toBe(true);
+      expect(state.error).toBeNull();
+    });
+
+    it('should set user and tokens on registerSuccess', () => {
+      const action = AuthActions.registerSuccess({ response: mockAuthResponse });
+      const state = authReducer(initialAuthState, action);
+
+      expect(state.user).toEqual(mockUser);
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.isLoading).toBe(false);
+    });
+
+    it('should set error on registerFailure', () => {
+      const action = AuthActions.registerFailure({ error: 'Email taken' });
+      const state = authReducer(
+        { ...initialAuthState, isLoading: true },
+        action,
+      );
+
+      expect(state.error).toBe('Email taken');
+      expect(state.isLoading).toBe(false);
+    });
+  });
+
+  // ──── Logout ────
+  describe('Logout', () => {
+    it('should set isLoading on logout', () => {
+      const action = AuthActions.logout();
+      const state = authReducer(authenticatedState, action);
+      expect(state.isLoading).toBe(true);
+    });
+
+    it('should reset to initial state on logoutSuccess', () => {
+      const action = AuthActions.logoutSuccess();
+      const state = authReducer(authenticatedState, action);
+      expect(state).toEqual(initialAuthState);
+    });
+
+    it('should set error on logoutFailure', () => {
+      const action = AuthActions.logoutFailure({ error: 'Server error' });
+      const state = authReducer(authenticatedState, action);
+      expect(state.error).toBe('Server error');
+      expect(state.isLoading).toBe(false);
+    });
+  });
+
+  // ──── Refresh Token ────
+  describe('Refresh Token', () => {
+    it('should update tokens on refreshTokenSuccess', () => {
+      const action = AuthActions.refreshTokenSuccess({
+        response: {
+          user: mockUser,
+          tokens: { accessToken: 'new-access', refreshToken: 'new-refresh' },
+        },
+      });
+      const state = authReducer(initialAuthState, action);
+
+      expect(state.accessToken).toBe('new-access');
+      expect(state.refreshToken).toBe('new-refresh');
+    });
+
+    it('should reset state on refreshTokenFailure', () => {
+      const action = AuthActions.refreshTokenFailure({ error: 'Expired' });
+      const state = authReducer(
+        { ...initialAuthState, accessToken: 'old' },
+        action,
+      );
+      expect(state).toEqual(initialAuthState);
+    });
+  });
+
+  // ──── Load User From Storage ────
+  describe('Load User From Storage', () => {
+    it('should set user and tokens on success', () => {
+      const action = AuthActions.loadUserFromStorageSuccess({
+        user: mockUser,
+        accessToken: 'stored-access',
+        refreshToken: 'stored-refresh',
+      });
+      const state = authReducer(initialAuthState, action);
+
+      expect(state.user).toEqual(mockUser);
+      expect(state.accessToken).toBe('stored-access');
+      expect(state.isAuthenticated).toBe(true);
+    });
+
+    it('should not change state on failure', () => {
+      const action = AuthActions.loadUserFromStorageFailure();
+      const state = authReducer(initialAuthState, action);
+      expect(state).toEqual(initialAuthState);
+    });
+  });
+
+  // ──── Clear Error ────
+  describe('Clear Error', () => {
+    it('should clear error', () => {
+      const errorState = { ...initialAuthState, error: 'Some error' };
+      const action = AuthActions.clearError();
+      const state = authReducer(errorState, action);
+      expect(state.error).toBeNull();
+    });
+  });
+});
+```
+
+**Notice:** No `TestBed` at all — reducers are pure functions, so testing them is just `function(input) → assert(output)`.
+
+---
+
+### 8.2 Spec File 2: Auth Selectors (Pure Function Tests)
+
+**File:** `src/app/features/auth/store/auth.selectors.spec.ts`
+
+Also pure functions — provide a mock state object and assert the output.
+
+```typescript
+import {
+  selectAuthState,
+  selectUser,
+  selectAccessToken,
+  selectRefreshToken,
+  selectIsAuthenticated,
+  selectIsLoading,
+  selectError,
+  selectAuthStatus,
+} from './auth.selectors';
+import { AuthState } from '../../../models/auth/auth-state.model';
+
+describe('Auth Selectors', () => {
+  const mockUser = {
+    id: '1',
     name: 'Test User',
     email: 'test@example.com',
-    password: 'Password123',
-    ...overrides,
   };
-}
-```
 
-**File:** `src/app/testing/mock-data/index.ts`
+  const state: { auth: AuthState } = {
+    auth: {
+      user: mockUser,
+      accessToken: 'token-abc',
+      refreshToken: 'refresh-xyz',
+      isAuthenticated: true,
+      isLoading: false,
+      error: 'Some error',
+    },
+  };
 
-```typescript
-export * from './auth.mock-data';
+  it('should select auth state', () => {
+    expect(selectAuthState(state as any)).toEqual(state.auth);
+  });
+
+  it('should select user', () => {
+    expect(selectUser(state as any)).toEqual(mockUser);
+  });
+
+  it('should select access token', () => {
+    expect(selectAccessToken(state as any)).toBe('token-abc');
+  });
+
+  it('should select refresh token', () => {
+    expect(selectRefreshToken(state as any)).toBe('refresh-xyz');
+  });
+
+  it('should select isAuthenticated', () => {
+    expect(selectIsAuthenticated(state as any)).toBe(true);
+  });
+
+  it('should select isLoading', () => {
+    expect(selectIsLoading(state as any)).toBe(false);
+  });
+
+  it('should select error', () => {
+    expect(selectError(state as any)).toBe('Some error');
+  });
+
+  it('should select combined authStatus', () => {
+    expect(selectAuthStatus(state as any)).toEqual({
+      isAuthenticated: true,
+      isLoading: false,
+      error: 'Some error',
+    });
+  });
+});
 ```
 
 ---
 
-### 8.3 Step 3: Create Re-export Barrel
-
-**File:** `src/app/testing/index.ts`
-
-```typescript
-export * from './create-mock';
-export * from './mock-data';
-```
-
----
-
-### 8.4 Spec File 1: AuthService (Service Unit Tests)
+### 8.3 Spec File 3: AuthService (Service Unit Tests)
 
 **File:** `src/app/core/services/auth.service.spec.ts`
 
-Tests the real `AuthService` with mocked HTTP.
+Tests the real `AuthService` with mocked HTTP. First spec that uses `TestBed`.
 
 ```typescript
 import { TestBed } from '@angular/core/testing';
@@ -3924,25 +4071,28 @@ import {
 import { AuthService } from './auth.service';
 import { LoggerService } from './logger.service';
 import { environment } from '../../../environments/environment';
-import { createMock } from '../../testing/create-mock';
-import {
-  createMockAuthResponse,
-  createMockLoginRequest,
-  createMockRegisterRequest,
-} from '../../testing/mock-data';
 import { AppConstants } from '../../models/app-constants';
 
 describe('AuthService', () => {
   let service: AuthService;
   let httpMock: HttpTestingController;
 
+  // ──── Reusable test data ────
+  const mockUser = { id: '1', name: 'Test User', email: 'test@example.com' };
+  const mockTokens = { accessToken: 'access-abc', refreshToken: 'refresh-xyz' };
+  const mockAuthResponse = { user: mockUser, tokens: mockTokens };
+
   beforeEach(() => {
+    const loggerSpy = jasmine.createSpyObj('LoggerService', [
+      'debug', 'info', 'warn', 'error',
+    ]);
+
     TestBed.configureTestingModule({
       providers: [
         AuthService,
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: LoggerService, useValue: createMock(LoggerService) },
+        { provide: LoggerService, useValue: loggerSpy },
       ],
     });
 
@@ -3962,21 +4112,20 @@ describe('AuthService', () => {
   // ──── login() ────
   describe('login()', () => {
     it('should send POST to /auth/login with credentials', () => {
-      const credentials = createMockLoginRequest();
-      const mockResponse = createMockAuthResponse();
+      const credentials = { email: 'test@example.com', password: 'Password123' };
 
       service.login(credentials).subscribe((response) => {
-        expect(response).toEqual(mockResponse);
+        expect(response).toEqual(mockAuthResponse);
       });
 
       const req = httpMock.expectOne(`${environment.apiUrl}/auth/login`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(credentials);
-      req.flush({ data: mockResponse }); // ApiResponse wrapper
+      req.flush({ data: mockAuthResponse }); // ApiResponse<T> wrapper
     });
 
-    it('should handle login error', () => {
-      const credentials = createMockLoginRequest();
+    it('should handle 401 error', () => {
+      const credentials = { email: 'bad@test.com', password: 'wrong' };
 
       service.login(credentials).subscribe({
         next: () => fail('Should have failed'),
@@ -3996,8 +4145,7 @@ describe('AuthService', () => {
   // ──── register() ────
   describe('register()', () => {
     it('should send POST to /auth/register', () => {
-      const request = createMockRegisterRequest();
-      const mockResponse = createMockAuthResponse();
+      const request = { name: 'Test', email: 'test@example.com', password: 'Password123' };
 
       service.register(request).subscribe((response) => {
         expect(response.user.email).toBe('test@example.com');
@@ -4006,7 +4154,7 @@ describe('AuthService', () => {
       const req = httpMock.expectOne(`${environment.apiUrl}/auth/register`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(request);
-      req.flush({ data: mockResponse });
+      req.flush({ data: mockAuthResponse });
     });
   });
 
@@ -4023,17 +4171,16 @@ describe('AuthService', () => {
 
   // ──── refreshToken() ────
   describe('refreshToken()', () => {
-    it('should send refresh token in body', () => {
+    it('should send refresh token in request body', () => {
       localStorage.setItem(AppConstants.REFRESH_TOKEN_KEY, 'my-refresh');
-      const mockResponse = createMockAuthResponse();
 
       service.refreshToken().subscribe((response) => {
-        expect(response).toEqual(mockResponse);
+        expect(response).toEqual(mockAuthResponse);
       });
 
       const req = httpMock.expectOne(`${environment.apiUrl}/auth/refresh-token`);
       expect(req.request.body).toEqual({ refreshToken: 'my-refresh' });
-      req.flush({ data: mockResponse });
+      req.flush({ data: mockAuthResponse });
     });
 
     it('should send empty string when no refresh token stored', () => {
@@ -4041,7 +4188,7 @@ describe('AuthService', () => {
 
       const req = httpMock.expectOne(`${environment.apiUrl}/auth/refresh-token`);
       expect(req.request.body).toEqual({ refreshToken: '' });
-      req.flush({ data: createMockAuthResponse() });
+      req.flush({ data: mockAuthResponse });
     });
   });
 
@@ -4086,9 +4233,8 @@ describe('AuthService', () => {
   // ──── User Storage ────
   describe('user storage', () => {
     it('should store and retrieve user', () => {
-      const user = { id: '1', name: 'Test', email: 'test@example.com' };
-      service.storeUser(user);
-      expect(service.getStoredUser()).toEqual(user);
+      service.storeUser(mockUser);
+      expect(service.getStoredUser()).toEqual(mockUser);
     });
 
     it('should return null when no user stored', () => {
@@ -4098,15 +4244,110 @@ describe('AuthService', () => {
 });
 ```
 
-**Pattern highlights:**
-- `createMock(LoggerService)` — auto-mocks the injected dependency
-- `createMockLoginRequest()` — clean test data from factories
-- `req.flush({ data: mockResponse })` — matches your `ApiResponse<T>` wrapper
-- `localStorage.clear()` in `afterEach` — isolation
+**Key patterns:**
+- `jasmine.createSpyObj('LoggerService', [...])` — standard mock for dependency
+- `req.flush({ data: mockAuthResponse })` — matches your `ApiResponse<T>` wrapper
+- `localStorage.clear()` in `afterEach` — test isolation
+- `httpMock.verify()` — ensures no unexpected HTTP calls
 
 ---
 
-### 8.5 Spec File 2: LoginComponent (Component Unit Tests)
+### 8.4 Spec File 4: Auth Guard (Functional Guard Tests)
+
+**File:** `src/app/core/guards/auth.guard.spec.ts`
+
+```typescript
+import { TestBed } from '@angular/core/testing';
+import {
+  ActivatedRouteSnapshot,
+  Router,
+  RouterStateSnapshot,
+} from '@angular/router';
+
+import { authGuard, guestGuard } from './auth.guard';
+import { AuthService } from '../services/auth.service';
+
+describe('Auth Guards', () => {
+  let authServiceSpy: jasmine.SpyObj<AuthService>;
+  let routerSpy: jasmine.SpyObj<Router>;
+  const mockRoute = {} as ActivatedRouteSnapshot;
+
+  beforeEach(() => {
+    authServiceSpy = jasmine.createSpyObj('AuthService', [
+      'getAccessToken',
+    ]);
+    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: AuthService, useValue: authServiceSpy },
+        { provide: Router, useValue: routerSpy },
+      ],
+    });
+  });
+
+  // ──── authGuard ────
+  describe('authGuard', () => {
+    it('should allow access when token exists', () => {
+      authServiceSpy.getAccessToken.and.returnValue('valid-token');
+      const mockState = { url: '/dashboard' } as RouterStateSnapshot;
+
+      const result = TestBed.runInInjectionContext(() =>
+        authGuard(mockRoute, mockState),
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('should redirect to login when no token', () => {
+      authServiceSpy.getAccessToken.and.returnValue(null);
+      const mockState = { url: '/dashboard' } as RouterStateSnapshot;
+
+      const result = TestBed.runInInjectionContext(() =>
+        authGuard(mockRoute, mockState),
+      );
+
+      expect(result).toBe(false);
+      expect(routerSpy.navigate).toHaveBeenCalledWith(
+        ['/auth/login'],
+        { queryParams: { returnUrl: '/dashboard' } },
+      );
+    });
+  });
+
+  // ──── guestGuard ────
+  describe('guestGuard', () => {
+    it('should allow access when no token (guest)', () => {
+      authServiceSpy.getAccessToken.and.returnValue(null);
+      const mockState = { url: '/auth/login' } as RouterStateSnapshot;
+
+      const result = TestBed.runInInjectionContext(() =>
+        guestGuard(mockRoute, mockState),
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('should redirect to dashboard when already authenticated', () => {
+      authServiceSpy.getAccessToken.and.returnValue('token');
+      const mockState = { url: '/auth/login' } as RouterStateSnapshot;
+
+      const result = TestBed.runInInjectionContext(() =>
+        guestGuard(mockRoute, mockState),
+      );
+
+      expect(result).toBe(false);
+      expect(routerSpy.navigate).toHaveBeenCalledWith(['/dashboard']);
+    });
+  });
+});
+```
+
+**Key:** `TestBed.runInInjectionContext()` is required for functional guards that use `inject()`.
+
+---
+
+### 8.5 Spec File 5: LoginComponent (Component Unit Tests)
 
 **File:** `src/app/features/auth/components/login/login.component.spec.ts`
 
@@ -4122,7 +4363,6 @@ import { AuthActions } from '../../store/auth.actions';
 import { LoggerService } from '../../../../core/services/logger.service';
 import { initialAuthState } from '../../../../models/auth/auth-state.model';
 import { selectAuthStatus } from '../../store/auth.selectors';
-import { createMock } from '../../../../testing/create-mock';
 
 describe('LoginComponent', () => {
   let component: LoginComponent;
@@ -4131,7 +4371,9 @@ describe('LoginComponent', () => {
   let loggerSpy: jasmine.SpyObj<LoggerService>;
 
   beforeEach(async () => {
-    loggerSpy = createMock(LoggerService);
+    loggerSpy = jasmine.createSpyObj('LoggerService', [
+      'debug', 'info', 'warn', 'error',
+    ]);
 
     await TestBed.configureTestingModule({
       imports: [LoginComponent, ReactiveFormsModule, RouterTestingModule],
@@ -4304,365 +4546,9 @@ describe('LoginComponent', () => {
 
 ---
 
-### 8.6 Spec File 3: Auth Reducer (Pure Function Tests)
+### 8.6 Implementation Order
 
-**File:** `src/app/features/auth/store/auth.reducer.spec.ts`
-
-Reducers are pure functions — the easiest to test! No TestBed needed.
-
-```typescript
-import { authReducer } from './auth.reducer';
-import { AuthActions } from './auth.actions';
-import {
-  AuthState,
-  initialAuthState,
-} from '../../../models/auth/auth-state.model';
-import {
-  createMockAuthResponse,
-  createMockLoginRequest,
-  createMockUser,
-} from '../../../testing/mock-data';
-
-describe('authReducer', () => {
-  // ──── Initial State ────
-  it('should return initial state for unknown action', () => {
-    const action = { type: 'UNKNOWN' };
-    const state = authReducer(initialAuthState, action);
-    expect(state).toEqual(initialAuthState);
-  });
-
-  // ──── Login ────
-  describe('Login', () => {
-    it('should set isLoading true and clear error on login', () => {
-      const request = createMockLoginRequest();
-      const action = AuthActions.login({ request });
-      const state = authReducer(initialAuthState, action);
-
-      expect(state.isLoading).toBe(true);
-      expect(state.error).toBeNull();
-    });
-
-    it('should set user, tokens, isAuthenticated on loginSuccess', () => {
-      const response = createMockAuthResponse();
-      const action = AuthActions.loginSuccess({ response });
-      const state = authReducer(initialAuthState, action);
-
-      expect(state.user).toEqual(response.user);
-      expect(state.accessToken).toBe('mock-access-token-xyz');
-      expect(state.refreshToken).toBe('mock-refresh-token-abc');
-      expect(state.isAuthenticated).toBe(true);
-      expect(state.isLoading).toBe(false);
-      expect(state.error).toBeNull();
-    });
-
-    it('should set error and stop loading on loginFailure', () => {
-      const action = AuthActions.loginFailure({ error: 'Invalid credentials' });
-      const state = authReducer(
-        { ...initialAuthState, isLoading: true },
-        action,
-      );
-
-      expect(state.error).toBe('Invalid credentials');
-      expect(state.isLoading).toBe(false);
-    });
-  });
-
-  // ──── Register ────
-  describe('Register', () => {
-    it('should set isLoading true on register', () => {
-      const action = AuthActions.register({
-        request: { name: 'Test', email: 'a@b.com', password: 'Pass123' },
-      });
-      const state = authReducer(initialAuthState, action);
-
-      expect(state.isLoading).toBe(true);
-      expect(state.error).toBeNull();
-    });
-
-    it('should set user and tokens on registerSuccess', () => {
-      const response = createMockAuthResponse();
-      const action = AuthActions.registerSuccess({ response });
-      const state = authReducer(initialAuthState, action);
-
-      expect(state.user).toEqual(response.user);
-      expect(state.isAuthenticated).toBe(true);
-      expect(state.isLoading).toBe(false);
-    });
-
-    it('should set error on registerFailure', () => {
-      const action = AuthActions.registerFailure({ error: 'Email taken' });
-      const state = authReducer(
-        { ...initialAuthState, isLoading: true },
-        action,
-      );
-
-      expect(state.error).toBe('Email taken');
-      expect(state.isLoading).toBe(false);
-    });
-  });
-
-  // ──── Logout ────
-  describe('Logout', () => {
-    const authenticatedState: AuthState = {
-      user: createMockUser(),
-      accessToken: 'token',
-      refreshToken: 'refresh',
-      isAuthenticated: true,
-      isLoading: false,
-      error: null,
-    };
-
-    it('should set isLoading on logout', () => {
-      const action = AuthActions.logout();
-      const state = authReducer(authenticatedState, action);
-      expect(state.isLoading).toBe(true);
-    });
-
-    it('should reset to initial state on logoutSuccess', () => {
-      const action = AuthActions.logoutSuccess();
-      const state = authReducer(authenticatedState, action);
-      expect(state).toEqual(initialAuthState);
-    });
-
-    it('should set error on logoutFailure', () => {
-      const action = AuthActions.logoutFailure({ error: 'Server error' });
-      const state = authReducer(authenticatedState, action);
-      expect(state.error).toBe('Server error');
-      expect(state.isLoading).toBe(false);
-    });
-  });
-
-  // ──── Refresh Token ────
-  describe('Refresh Token', () => {
-    it('should update tokens on refreshTokenSuccess', () => {
-      const response = createMockAuthResponse({
-        tokens: { accessToken: 'new-access', refreshToken: 'new-refresh' },
-      });
-      const action = AuthActions.refreshTokenSuccess({ response });
-      const state = authReducer(initialAuthState, action);
-
-      expect(state.accessToken).toBe('new-access');
-      expect(state.refreshToken).toBe('new-refresh');
-    });
-
-    it('should reset state on refreshTokenFailure', () => {
-      const action = AuthActions.refreshTokenFailure({ error: 'Expired' });
-      const state = authReducer(
-        { ...initialAuthState, accessToken: 'old' },
-        action,
-      );
-      expect(state).toEqual(initialAuthState);
-    });
-  });
-
-  // ──── Load User From Storage ────
-  describe('Load User From Storage', () => {
-    it('should set user and tokens on success', () => {
-      const user = createMockUser();
-      const action = AuthActions.loadUserFromStorageSuccess({
-        user,
-        accessToken: 'stored-access',
-        refreshToken: 'stored-refresh',
-      });
-      const state = authReducer(initialAuthState, action);
-
-      expect(state.user).toEqual(user);
-      expect(state.accessToken).toBe('stored-access');
-      expect(state.isAuthenticated).toBe(true);
-    });
-
-    it('should not change state on failure', () => {
-      const action = AuthActions.loadUserFromStorageFailure();
-      const state = authReducer(initialAuthState, action);
-      expect(state).toEqual(initialAuthState);
-    });
-  });
-
-  // ──── Clear Error ────
-  describe('Clear Error', () => {
-    it('should clear error', () => {
-      const errorState = { ...initialAuthState, error: 'Some error' };
-      const action = AuthActions.clearError();
-      const state = authReducer(errorState, action);
-      expect(state.error).toBeNull();
-    });
-  });
-});
-```
-
-**Notice:** No `TestBed` at all — reducers are pure functions, so testing them is just `function(input) → assert(output)`.
-
----
-
-### 8.7 Spec File 4: Auth Selectors (Pure Function Tests)
-
-**File:** `src/app/features/auth/store/auth.selectors.spec.ts`
-
-```typescript
-import {
-  selectAuthState,
-  selectUser,
-  selectAccessToken,
-  selectRefreshToken,
-  selectIsAuthenticated,
-  selectIsLoading,
-  selectError,
-  selectAuthStatus,
-} from './auth.selectors';
-import { AuthState } from '../../../models/auth/auth-state.model';
-import { createMockUser } from '../../../testing/mock-data';
-
-describe('Auth Selectors', () => {
-  const mockUser = createMockUser();
-
-  const state: { auth: AuthState } = {
-    auth: {
-      user: mockUser,
-      accessToken: 'token-abc',
-      refreshToken: 'refresh-xyz',
-      isAuthenticated: true,
-      isLoading: false,
-      error: 'Some error',
-    },
-  };
-
-  it('should select auth state', () => {
-    expect(selectAuthState(state as any)).toEqual(state.auth);
-  });
-
-  it('should select user', () => {
-    expect(selectUser(state as any)).toEqual(mockUser);
-  });
-
-  it('should select access token', () => {
-    expect(selectAccessToken(state as any)).toBe('token-abc');
-  });
-
-  it('should select refresh token', () => {
-    expect(selectRefreshToken(state as any)).toBe('refresh-xyz');
-  });
-
-  it('should select isAuthenticated', () => {
-    expect(selectIsAuthenticated(state as any)).toBe(true);
-  });
-
-  it('should select isLoading', () => {
-    expect(selectIsLoading(state as any)).toBe(false);
-  });
-
-  it('should select error', () => {
-    expect(selectError(state as any)).toBe('Some error');
-  });
-
-  it('should select combined authStatus', () => {
-    expect(selectAuthStatus(state as any)).toEqual({
-      isAuthenticated: true,
-      isLoading: false,
-      error: 'Some error',
-    });
-  });
-});
-```
-
----
-
-### 8.8 Spec File 5: Auth Guard (Functional Guard Tests)
-
-**File:** `src/app/core/guards/auth.guard.spec.ts`
-
-```typescript
-import { TestBed } from '@angular/core/testing';
-import {
-  ActivatedRouteSnapshot,
-  Router,
-  RouterStateSnapshot,
-} from '@angular/router';
-
-import { authGuard, guestGuard } from './auth.guard';
-import { AuthService } from '../services/auth.service';
-import { createMock } from '../../testing/create-mock';
-
-describe('Auth Guards', () => {
-  let authServiceSpy: jasmine.SpyObj<AuthService>;
-  let routerSpy: jasmine.SpyObj<Router>;
-  const mockRoute = {} as ActivatedRouteSnapshot;
-
-  beforeEach(() => {
-    authServiceSpy = createMock(AuthService);
-    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
-
-    TestBed.configureTestingModule({
-      providers: [
-        { provide: AuthService, useValue: authServiceSpy },
-        { provide: Router, useValue: routerSpy },
-      ],
-    });
-  });
-
-  // ──── authGuard ────
-  describe('authGuard', () => {
-    it('should allow access when token exists', () => {
-      authServiceSpy.getAccessToken.and.returnValue('valid-token');
-      const mockState = { url: '/dashboard' } as RouterStateSnapshot;
-
-      const result = TestBed.runInInjectionContext(() =>
-        authGuard(mockRoute, mockState),
-      );
-
-      expect(result).toBe(true);
-    });
-
-    it('should redirect to login when no token', () => {
-      authServiceSpy.getAccessToken.and.returnValue(null);
-      const mockState = { url: '/dashboard' } as RouterStateSnapshot;
-
-      const result = TestBed.runInInjectionContext(() =>
-        authGuard(mockRoute, mockState),
-      );
-
-      expect(result).toBe(false);
-      expect(routerSpy.navigate).toHaveBeenCalledWith(
-        ['/auth/login'],
-        { queryParams: { returnUrl: '/dashboard' } },
-      );
-    });
-  });
-
-  // ──── guestGuard ────
-  describe('guestGuard', () => {
-    it('should allow access when no token (guest)', () => {
-      authServiceSpy.getAccessToken.and.returnValue(null);
-      const mockState = { url: '/auth/login' } as RouterStateSnapshot;
-
-      const result = TestBed.runInInjectionContext(() =>
-        guestGuard(mockRoute, mockState),
-      );
-
-      expect(result).toBe(true);
-    });
-
-    it('should redirect to dashboard when already authenticated', () => {
-      authServiceSpy.getAccessToken.and.returnValue('token');
-      const mockState = { url: '/auth/login' } as RouterStateSnapshot;
-
-      const result = TestBed.runInInjectionContext(() =>
-        guestGuard(mockRoute, mockState),
-      );
-
-      expect(result).toBe(false);
-      expect(routerSpy.navigate).toHaveBeenCalledWith(['/dashboard']);
-    });
-  });
-});
-```
-
-**Key:** `TestBed.runInInjectionContext()` is required for functional guards that use `inject()`.
-
----
-
-### 8.9 Implementation Order
-
-When you start implementing, follow this order (easiest → hardest):
+Follow this order (easiest → hardest):
 
 ```
 ORDER   FILE                          WHY
@@ -4670,12 +4556,12 @@ ORDER   FILE                          WHY
   1     auth.reducer.spec.ts          Pure functions, no TestBed
   2     auth.selectors.spec.ts        Pure functions, no TestBed
   3     auth.service.spec.ts          TestBed + HttpTestingController
-  4     auth.guard.spec.ts            TestBed + createMock
+  4     auth.guard.spec.ts            TestBed + createSpyObj
   5     login.component.spec.ts       TestBed + MockStore + forms
-  6     register.component.spec.ts    Same pattern, more validators
+  6     register.component.spec.ts    Same pattern, more validators (stretch goal)
 ```
 
-### 8.10 Running & Verifying
+### 8.7 Running & Verifying
 
 ```bash
 # Run all tests
@@ -4696,27 +4582,41 @@ ng test --include=**/auth/**/*.spec.ts --watch=false
 ```
 Chrome: Executed 45 of 45 SUCCESS
 
+  authReducer
+    ✓ should return initial state for unknown action
+    Login
+      ✓ should set isLoading true and clear error on login
+      ✓ should set user, tokens, isAuthenticated on loginSuccess
+      ✓ should set error and stop loading on loginFailure
+    ...
+
+  Auth Selectors
+    ✓ should select user
+    ✓ should select isAuthenticated
+    ✓ should select combined authStatus
+    ...
+
   AuthService
     ✓ should be created
     login()
       ✓ should send POST to /auth/login with credentials
-      ✓ should handle login error
-    register()
-      ✓ should send POST to /auth/register
+      ✓ should handle 401 error
+    ...
+
+  Auth Guards
+    authGuard
+      ✓ should allow access when token exists
+      ✓ should redirect to login when no token
     ...
 
   LoginComponent
     ✓ should create
     form initialization
       ✓ should create form on init
-      ✓ should have email and password controls
-    ...
-
-  authReducer
-    ✓ should return initial state for unknown action
-    Login
-      ✓ should set isLoading true
-      ✓ should set user on loginSuccess
+    email validation
+      ✓ should be invalid when empty
+    onSubmit()
+      ✓ should dispatch login action when form is valid
     ...
 ```
 
@@ -4724,15 +4624,24 @@ Chrome: Executed 45 of 45 SUCCESS
 
 ## Summary - Part 8
 
-| What | Pattern Used |
-|------|-------------|
-| `create-mock.ts` | Generic mock factory via prototype introspection |
-| `auth.mock-data.ts` | Factory functions with `Partial<T>` overrides |
-| `auth.service.spec.ts` | Real service + `HttpTestingController` + `ApiResponse` wrapper |
-| `login.component.spec.ts` | `MockStore` + `createMock()` + `NO_ERRORS_SCHEMA` |
-| `auth.reducer.spec.ts` | Pure function tests — no TestBed at all |
-| `auth.selectors.spec.ts` | Pure function tests — provide mock state object |
-| `auth.guard.spec.ts` | `runInInjectionContext()` for functional guards |
+| Spec File | Pattern Used | TestBed? |
+|-----------|-------------|:--------:|
+| `auth.reducer.spec.ts` | Pure function — `reducer(state, action) → newState` | No |
+| `auth.selectors.spec.ts` | Pure function — `selector(state) → value` | No |
+| `auth.service.spec.ts` | Real service + `HttpTestingController` + `createSpyObj` | Yes |
+| `auth.guard.spec.ts` | `runInInjectionContext()` + `createSpyObj` | Yes |
+| `login.component.spec.ts` | `MockStore` + `createSpyObj` + `NO_ERRORS_SCHEMA` | Yes |
+
+#### Mocking Pattern Used Throughout
+
+```typescript
+// Standard Jasmine pattern — used in every spec file
+const spy = jasmine.createSpyObj('ServiceName', ['method1', 'method2']);
+spy.method1.and.returnValue(someValue);
+
+// Provide to TestBed
+{ provide: ServiceClass, useValue: spy }
+```
 
 ---
 
@@ -4740,12 +4649,11 @@ Chrome: Executed 45 of 45 SUCCESS
 
 You now have the complete testing fundamentals knowledge and ready-to-implement spec files. Here's the recommended path:
 
-1. **Create** `src/app/testing/` folder structure (create-mock + mock-data)
-2. **Start with** `auth.reducer.spec.ts` and `auth.selectors.spec.ts` (easiest wins)
-3. **Move to** `auth.service.spec.ts` (introduces HttpTestingController)
-4. **Then** `auth.guard.spec.ts` (introduces createMock + runInInjectionContext)
-5. **Finally** `login.component.spec.ts` (brings it all together)
-6. **Stretch goal:** `register.component.spec.ts` (same patterns, more validators)
+1. **Start with** `auth.reducer.spec.ts` and `auth.selectors.spec.ts` (easiest wins, no TestBed)
+2. **Move to** `auth.service.spec.ts` (introduces TestBed + HttpTestingController)
+3. **Then** `auth.guard.spec.ts` (introduces runInInjectionContext)
+4. **Finally** `login.component.spec.ts` (brings it all together)
+5. **Stretch goal:** `register.component.spec.ts` (same patterns, more validators)
 
 Run `ng test --watch=false` after each file to verify green tests before moving on.
 
